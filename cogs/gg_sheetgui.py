@@ -87,7 +87,9 @@ if GOOGLE_SHEET_ID:
             log.info(f"[GSheets Cog] Đã kết nối với Google Sheets API (file).")
         except Exception as e:
             log.error(f"[GSheets] Lỗi kết nối qua file: {e}")
-    elif creds_dict:
+    
+    # Nếu gc vẫn None và có creds_dict, thử cách 2
+    if gc is None and creds_dict:
         try:
             from google.oauth2.service_account import Credentials
             scopes = ["https://www.googleapis.com/auth/spreadsheets"]
