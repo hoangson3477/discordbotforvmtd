@@ -7,7 +7,7 @@ import json
 import base64
 from google.oauth2.service_account import Credentials
 
-SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID", "1EghAX-JZRxFwhLBdf0Rs7g6Q7aHlphS1wRTCkSM5kAg")
+SPREADSHEET_ID = "1EghAX-JZRxFwhLBdf0Rs7g6Q7aHlphS1wRTCkSM5kAg"
 WORKSHEET_NAME = "5th Inspectorate Department"
 LOG_CHANNEL_ID = 1472231717925421117
 

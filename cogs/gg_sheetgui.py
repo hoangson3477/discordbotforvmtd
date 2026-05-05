@@ -90,7 +90,8 @@ if GOOGLE_SHEET_ID:
     elif creds_dict:
         try:
             from google.oauth2.service_account import Credentials
-            credentials = Credentials.from_service_account_info(creds_dict)
+            scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+            credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             gc = gspread.Client(auth=credentials)
             log.info("[GSheets Cog] Đã kết nối với Google Sheets API (env var).")
         except Exception as e:
