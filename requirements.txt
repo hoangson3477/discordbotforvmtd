@@ -1,0 +1,28 @@
+# Discord Bot Framework
+discord.py>=2.4.0,<3.0.0
+
+# Database
+asyncpg>=0.29.0,<1.0.0
+supabase>=2.0.0,<3.0.0
+
+# HTTP Client
+aiohttp>=3.9.0,<4.0.0
+
+# Google Sheets Integration
+gspread>=6.0.0,<7.0.0
+google-auth>=2.22.0
+
+# Environment Variables
+python-dotenv>=1.0.0,<2.0.0
+
+# File Watching for Auto-reload
+watchdog>=3.0.0,<4.0.0
+
+# Spotify API (if using spotipy in spotify cog)
+# spotipy>=2.23.0,<3.0.0
+
+# Date/Time utilities
+python-dateutil>=2.8.0
+
+# Optional: Enhanced logging
+colorlog>=6.0.0

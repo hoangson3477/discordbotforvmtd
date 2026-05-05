@@ -1,0 +1,274 @@
+2026-05-02 13:12:29,885 - my_bot - INFO - AIOHTTP ClientSession đã được tạo.
+2026-05-02 13:12:31,401 - my_bot - INFO - Đã tải cog: cogs.autorep
+2026-05-02 13:12:32,980 - my_bot - INFO - Đã tải cog: cogs.blacklist
+2026-05-02 13:12:32,984 - my_bot - INFO - Đã tải cog: cogs.business
+2026-05-02 13:12:35,644 - my_bot - INFO - Đã tải cog: cogs.chamcong
+2026-05-02 13:12:35,646 - my_bot - INFO - Đã tải cog: cogs.donatecog
+2026-05-02 13:12:36,127 - my_bot - INFO - Đã tải cog: cogs.form_cog
+2026-05-02 13:12:36,603 - my_bot - INFO - Đã tải cog: cogs.fun_action
+2026-05-02 13:12:36,608 - my_bot - INFO - Đã tải cog: cogs.gang
+2026-05-02 13:12:37,035 - my_bot - INFO - [GSheets Cog] Đã kết nối với Google Sheets API bằng discordbotsheets-466304-0a64625eea26.json.
+2026-05-02 13:12:38,539 - my_bot - INFO - Đã tải cog: cogs.gg_sheetgui
+2026-05-02 13:12:38,542 - my_bot - INFO - Đã tải cog: cogs.giverole
+2026-05-02 13:12:38,566 - my_bot - INFO - Đã tải cog: cogs.prode
+2026-05-02 13:12:39,991 - my_bot - INFO - Đã tải cog: cogs.quan_nhan_info
+2026-05-02 13:12:39,993 - my_bot - INFO - Đã tải cog: cogs.spamevent
+2026-05-02 13:12:39,996 - my_bot - INFO - Đã tải cog: cogs.spotify
+2026-05-02 13:12:39,998 - my_bot - INFO - Đã tải cog: cogs.thongke_role_voice
+2026-05-02 13:12:40,390 - my_bot - INFO - Đã tải cog: cogs.natgame.army
+2026-05-02 13:12:40,394 - my_bot - INFO - Đã tải cog: cogs.natgame.formdefense
+2026-05-02 13:12:40,396 - my_bot - INFO - Đã tải cog: cogs.natgame.formunit
+2026-05-02 13:12:40,398 - my_bot - INFO - Đã tải cog: cogs.natgame.help_cog
+2026-05-02 13:12:40,401 - my_bot - ERROR - Không thể tải cog leaderboard.py: Extension 'cogs.natgame.leaderboard' raised an error: CommandRegistrationError: The alias wartop is already an existing command or alias.
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 974, in _load_from_module_spec
+    await setup(self)
+  File "c:\Users\Admin\Desktop\folderbot\cogs\natgame\leaderboard.py", line 175, in setup
+    await bot.add_cog(Leaderboard(bot))
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 810, in add_cog
+    cog = await cog._inject(self, override=override, guild=guild, guilds=guilds)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\cog.py", line 729, in _inject
+    raise e
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\cog.py", line 720, in _inject
+    bot.add_command(command)
+    ~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 264, in add_command
+    super().add_command(command)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\core.py", line 1397, in add_command
+    raise CommandRegistrationError(alias, alias_conflict=True)
+discord.ext.commands.errors.CommandRegistrationError: The alias wartop is already an existing command or alias.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\maingui.py", line 200, in setup_hook
+    await self.load_extension(module_path)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 1040, in load_extension
+    await self._load_from_module_spec(spec, name)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 979, in _load_from_module_spec
+    raise errors.ExtensionFailed(key, e) from e
+discord.ext.commands.errors.ExtensionFailed: Extension 'cogs.natgame.leaderboard' raised an error: CommandRegistrationError: The alias wartop is already an existing command or alias.
+2026-05-02 13:12:40,408 - my_bot - INFO - Đã tải cog: cogs.natgame.nationinfo
+2026-05-02 13:12:40,411 - my_bot - INFO - Đã tải cog: cogs.natgame.nationlevel
+2026-05-02 13:12:40,428 - my_bot - INFO - Đã tải cog: cogs.natgame.pve
+2026-05-02 13:12:40,430 - my_bot - INFO - Đã tải cog: cogs.natgame.quests
+2026-05-02 13:12:40,432 - my_bot - INFO - Đã tải cog: cogs.natgame.recruit
+2026-05-02 13:12:40,433 - my_bot - INFO - Đã tải cog: cogs.natgame.register
+2026-05-02 13:12:40,435 - my_bot - INFO - Đã tải cog: cogs.natgame.setwararmy
+2026-05-02 13:12:40,437 - my_bot - INFO - Đã tải cog: cogs.natgame.shop
+2026-05-02 13:12:40,439 - my_bot - INFO - Đã tải cog: cogs.natgame.spectrain
+2026-05-02 13:12:40,441 - my_bot - INFO - Đã tải cog: cogs.natgame.spy
+2026-05-02 13:12:40,444 - my_bot - INFO - Đã tải cog: cogs.natgame.tick
+2026-05-02 13:12:40,445 - my_bot - ERROR - Không thể tải cog utils.py: Extension 'cogs.natgame.utils' has no 'setup' function.
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 968, in _load_from_module_spec
+    setup = getattr(lib, 'setup')
+AttributeError: module 'cogs.natgame.utils' has no attribute 'setup'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\maingui.py", line 200, in setup_hook
+    await self.load_extension(module_path)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 1040, in load_extension
+    await self._load_from_module_spec(spec, name)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 971, in _load_from_module_spec
+    raise errors.NoEntryPointError(key)
+discord.ext.commands.errors.NoEntryPointError: Extension 'cogs.natgame.utils' has no 'setup' function.
+2026-05-02 13:12:40,454 - my_bot - INFO - Đã tải cog: cogs.natgame.war_cmd
+2026-05-02 13:12:40,456 - my_bot - ERROR - Không thể tải cog combat_engine.py: Extension 'cogs.natgame.war.combat_engine' has no 'setup' function.
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 968, in _load_from_module_spec
+    setup = getattr(lib, 'setup')
+AttributeError: module 'cogs.natgame.war.combat_engine' has no attribute 'setup'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\maingui.py", line 200, in setup_hook
+    await self.load_extension(module_path)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 1040, in load_extension
+    await self._load_from_module_spec(spec, name)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 971, in _load_from_module_spec
+    raise errors.NoEntryPointError(key)
+discord.ext.commands.errors.NoEntryPointError: Extension 'cogs.natgame.war.combat_engine' has no 'setup' function.
+2026-05-02 13:12:40,461 - my_bot - ERROR - Không thể tải cog pve_adapter.py: Extension 'cogs.natgame.war.pve_adapter' has no 'setup' function.
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 968, in _load_from_module_spec
+    setup = getattr(lib, 'setup')
+AttributeError: module 'cogs.natgame.war.pve_adapter' has no attribute 'setup'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\maingui.py", line 200, in setup_hook
+    await self.load_extension(module_path)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 1040, in load_extension
+    await self._load_from_module_spec(spec, name)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 971, in _load_from_module_spec
+    raise errors.NoEntryPointError(key)
+discord.ext.commands.errors.NoEntryPointError: Extension 'cogs.natgame.war.pve_adapter' has no 'setup' function.
+2026-05-02 13:12:40,463 - my_bot - ERROR - Không thể tải cog war_adapter.py: Extension 'cogs.natgame.war.war_adapter' has no 'setup' function.
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 968, in _load_from_module_spec
+    setup = getattr(lib, 'setup')
+AttributeError: module 'cogs.natgame.war.war_adapter' has no attribute 'setup'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\maingui.py", line 200, in setup_hook
+    await self.load_extension(module_path)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 1040, in load_extension
+    await self._load_from_module_spec(spec, name)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 971, in _load_from_module_spec
+    raise errors.NoEntryPointError(key)
+discord.ext.commands.errors.NoEntryPointError: Extension 'cogs.natgame.war.war_adapter' has no 'setup' function.
+2026-05-02 13:12:40,466 - my_bot - ERROR - Không thể tải cog war_service.py: Extension 'cogs.natgame.war.war_service' has no 'setup' function.
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 968, in _load_from_module_spec
+    setup = getattr(lib, 'setup')
+AttributeError: module 'cogs.natgame.war.war_service' has no attribute 'setup'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\maingui.py", line 200, in setup_hook
+    await self.load_extension(module_path)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 1040, in load_extension
+    await self._load_from_module_spec(spec, name)
+  File "C:\Python314\Lib\site-packages\discord\ext\commands\bot.py", line 971, in _load_from_module_spec
+    raise errors.NoEntryPointError(key)
+discord.ext.commands.errors.NoEntryPointError: Extension 'cogs.natgame.war.war_service' has no 'setup' function.
+2026-05-02 13:12:40,469 - my_bot - INFO - CustomHelpCommand đã được thiết lập.
+2026-05-02 13:12:40,470 - my_bot - INFO - Đã tải CustomHelpCommand.
+2026-05-02 13:12:40,471 - my_bot - INFO - [GSheets Cog] Đang chờ bot sẵn sàng để tạo bản đồ cột...
+2026-05-02 13:12:40,908 - my_bot - INFO - [SLASH-SYNC] Synced 7 commands (startup)
+2026-05-02 13:12:44,253 - my_bot - INFO - Bot đã sẵn sàng! Đăng nhập với tư cách RoSROV#6604
+2026-05-02 13:12:44,253 - my_bot - INFO - ------
+2026-05-02 13:12:49,255 - my_bot - INFO - [Column Map] Bắt đầu tạo bản đồ cột từ Google Sheet...
+2026-05-02 13:12:50,666 - my_bot - INFO - [Column Map] Tạo bản đồ cột thành công với 17 cột.
+2026-05-02 13:12:50,666 - my_bot - INFO - [Cache] Bắt đầu làm mới cache dữ liệu từ Google Sheets...
+2026-05-02 13:12:57,134 - my_bot - INFO - [Cache] Làm mới cache thành công.
+2026-05-02 13:49:17,901 - my_bot - INFO - [Cache] Bắt đầu làm mới cache dữ liệu từ Google Sheets...
+2026-05-02 13:49:25,406 - my_bot - INFO - [Cache] Làm mới cache thành công.
+2026-05-02 14:01:26,321 - my_bot - INFO - Bot đã sẵn sàng! Đăng nhập với tư cách RoSROV#6604
+2026-05-02 14:01:26,323 - my_bot - INFO - ------
+2026-05-02 14:05:55,997 - my_bot - INFO - [Cache] Bắt đầu làm mới cache dữ liệu từ Google Sheets...
+2026-05-02 14:05:56,081 - my_bot - ERROR - [Cache] Lỗi nghiêm trọng khi làm mới cache: ('Connection aborted.', ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None))
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Python314\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "C:\Python314\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "C:\Python314\Lib\http\client.py", line 1450, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 725, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Python314\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] An existing connection was forcibly closed by the remote host
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Python314\Lib\site-packages\requests\adapters.py", line 645, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "C:\Python314\Lib\site-packages\urllib3\connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+        method, url, error=new_e, _pool=self, _stacktrace=sys.exc_info()[2]
+    )
+  File "C:\Python314\Lib\site-packages\urllib3\util\retry.py", line 490, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\site-packages\urllib3\util\util.py", line 38, in reraise
+    raise value.with_traceback(tb)
+  File "C:\Python314\Lib\site-packages\urllib3\connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "C:\Python314\Lib\site-packages\urllib3\connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "C:\Python314\Lib\site-packages\urllib3\connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "C:\Python314\Lib\http\client.py", line 1450, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "C:\Python314\Lib\http\client.py", line 297, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\socket.py", line 725, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Python314\Lib\ssl.py", line 1304, in recv_into
+    return self.read(nbytes, buffer)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\ssl.py", line 1138, in read
+    return self._sslobj.read(len, buffer)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+urllib3.exceptions.ProtocolError: ('Connection aborted.', ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Admin\Desktop\folderbot\cogs\gg_sheetgui.py", line 278, in _load_or_get_cache
+    sh = gc.open_by_key(GOOGLE_SHEET_ID)
+  File "C:\Python314\Lib\site-packages\gspread\client.py", line 168, in open_by_key
+    spreadsheet = Spreadsheet(self.http_client, {"id": key})
+  File "C:\Python314\Lib\site-packages\gspread\spreadsheet.py", line 29, in __init__
+    metadata = self.fetch_sheet_metadata()
+  File "C:\Python314\Lib\site-packages\gspread\spreadsheet.py", line 230, in fetch_sheet_metadata
+    return self.client.fetch_sheet_metadata(self.id, params=params)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\site-packages\gspread\http_client.py", line 305, in fetch_sheet_metadata
+    r = self.request("get", url, params=params)
+  File "C:\Python314\Lib\site-packages\gspread\http_client.py", line 114, in request
+    response = self.session.request(
+        method=method,
+    ...<6 lines>...
+        timeout=self.timeout,
+    )
+  File "C:\Python314\Lib\site-packages\google\auth\transport\requests.py", line 543, in request
+    response = super(AuthorizedSession, self).request(
+        method,
+    ...<4 lines>...
+        **kwargs
+    )
+  File "C:\Python314\Lib\site-packages\requests\sessions.py", line 592, in request
+    resp = self.send(prep, **send_kwargs)
+  File "C:\Python314\Lib\site-packages\requests\sessions.py", line 706, in send
+    r = adapter.send(request, **kwargs)
+  File "C:\Python314\Lib\site-packages\requests\adapters.py", line 660, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None))
+2026-05-02 14:06:51,175 - my_bot - INFO - [Cache] Bắt đầu làm mới cache dữ liệu từ Google Sheets...
+2026-05-02 14:06:58,693 - my_bot - INFO - [Cache] Làm mới cache thành công.
