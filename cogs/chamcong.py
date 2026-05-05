@@ -2,17 +2,38 @@ import discord
 from discord.ext import commands
 import datetime
 import gspread
+import os
+import json
+import base64
 from google.oauth2.service_account import Credentials
 
-SPREADSHEET_ID = "1EghAX-JZRxFwhLBdf0Rs7g6Q7aHlphS1wRTCkSM5kAg"
+SPREADSHEET_ID = os.getenv("GOOGLE_SHEET_ID", "1EghAX-JZRxFwhLBdf0Rs7g6Q7aHlphS1wRTCkSM5kAg")
 WORKSHEET_NAME = "5th Inspectorate Department"
 LOG_CHANNEL_ID = 1472231717925421117
 
 def get_sheet():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file("discordbotsheets-466304-0a64625eea26.json", scopes=scopes)
-    client = gspread.authorize(creds)
-    return client.open_by_key(SPREADSHEET_ID).worksheet(WORKSHEET_NAME)
+    
+    # Thử load từ base64 env var trước (Railway)
+    creds_b64 = os.getenv('GOOGLE_SHEET_CREDENTIALS_B64')
+    if creds_b64:
+        try:
+            creds_json = base64.b64decode(creds_b64).decode('utf-8')
+            creds_dict = json.loads(creds_json)
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            client = gspread.authorize(creds)
+            return client.open_by_key(SPREADSHEET_ID).worksheet(WORKSHEET_NAME)
+        except Exception as e:
+            print(f"[ChamCong] Lỗi load base64 creds: {e}")
+    
+    # Fallback: load từ file (local)
+    creds_file = "discordbotsheets-466304-0a64625eea26.json"
+    if os.path.exists(creds_file):
+        creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
+        client = gspread.authorize(creds)
+        return client.open_by_key(SPREADSHEET_ID).worksheet(WORKSHEET_NAME)
+    
+    raise Exception("[ChamCong] Không tìm thấy Google credentials!")
 
 class ChamCong(commands.Cog):
     def __init__(self, bot):
