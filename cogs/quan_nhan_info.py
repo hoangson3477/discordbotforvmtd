@@ -132,16 +132,20 @@ class AchievementHubView(discord.ui.View):
 
     def add_page_select(self):
         """Thêm dropdown chọn page"""
-        pages = self.cog.supabase.table("achievement_pages").select("id, name").order("id").execute()
+        pages = self.cog.supabase.table("achievement_pages").select("id, name, key").order("id").execute()
         
         options = [discord.SelectOption(label="📋 Toàn bộ", value="all", description="Xem tất cả thành tựu")]
         
         for p in pages.data:
             if len(options) >= 25:
                 break
+            # Use 'key' for value (shorter, URL-safe), 'name' for label
+            page_key = p.get("key") or p["name"].lower().replace(" ", "_")[:50]
+            page_name = p["name"][:100] if p["name"].strip() else f"Page {p['id']}"
+            
             options.append(discord.SelectOption(
-                label=p["name"][:100],
-                value=p["name"],
+                label=page_name,
+                value=page_key[:100],  # Discord limit: 1-100 chars
                 description=f"Page {p['id']}"
             ))
         
@@ -211,7 +215,7 @@ class AchievementHubView(discord.ui.View):
         
         # Filter theo page
         if page_key != "all":
-            page_data = self.cog.supabase.table("achievement_pages").select("id").eq("name", page_key).execute()
+            page_data = self.cog.supabase.table("achievement_pages").select("id").eq("key", page_key).execute()
             if page_data.data:
                 links = self.cog.supabase.table("achievement_page_links").select("achievement_id").eq("page_id", page_data.data[0]["id"]).execute()
                 achievement_ids = [l["achievement_id"] for l in links.data]
