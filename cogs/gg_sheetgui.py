@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import gspread
 import os
+import json
+import base64
 from datetime import datetime, timezone, timedelta
 import asyncio
 import logging
