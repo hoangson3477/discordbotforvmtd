@@ -24,11 +24,3 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
-
-# JSON credentials
-discordbotsheets-*.json
-
-# Data files (sensitive)
-gang_data.json
-config/whitelist.json
-data/auto_reply_rules.json

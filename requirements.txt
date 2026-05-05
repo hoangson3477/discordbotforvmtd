@@ -26,3 +26,5 @@ python-dateutil>=2.8.0
 
 # Optional: Enhanced logging
 colorlog>=6.0.0
+
+rblx-open-cloud

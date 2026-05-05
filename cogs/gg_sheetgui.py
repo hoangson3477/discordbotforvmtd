@@ -55,15 +55,46 @@ SYSTEM_COLS = {
 
 # FIX #8: Xóa khai báo trùng lặp ở dưới (đã có ở trên)
 
+def load_google_credentials():
+    """Load credentials từ file hoặc base64 env var"""
+    # Cách 1: File path (local dev)
+    creds_file = os.getenv('GOOGLE_SHEET_CREDENTIALS_FILE')
+    if creds_file and os.path.exists(creds_file):
+        return creds_file, None
+    
+    # Cách 2: Base64 encoded JSON (Railway deploy)
+    creds_b64 = os.getenv('GOOGLE_SHEET_CREDENTIALS_B64')
+    if creds_b64:
+        try:
+            creds_json = base64.b64decode(creds_b64).decode('utf-8')
+            creds_dict = json.loads(creds_json)
+            return None, creds_dict
+        except Exception as e:
+            log.error(f"[GSheets] Lỗi decode base64 credentials: {e}")
+            return None, None
+    
+    return None, None
+
 gc = None
-if GOOGLE_SHEET_CREDENTIALS_FILE and GOOGLE_SHEET_ID:
-    try:
-        gc = gspread.service_account(filename=GOOGLE_SHEET_CREDENTIALS_FILE)
-        log.info(f"[GSheets Cog] Đã kết nối với Google Sheets API bằng {GOOGLE_SHEET_CREDENTIALS_FILE}.")
-    except Exception as e:
-        log.error(f"LỖI KHI KẾT NỐI VỚI GOOGLE SHEETS API TRONG COG: {type(e).__name__}: {e}", exc_info=True)
-        log.error("Vui lòng kiểm tra: File credentials, Google Sheets API đã bật, và đã chia sẻ Sheet với email dịch vụ.")
-        gc = None
+if GOOGLE_SHEET_ID:
+    creds_file, creds_dict = load_google_credentials()
+    
+    if creds_file:
+        try:
+            gc = gspread.service_account(filename=creds_file)
+            log.info(f"[GSheets Cog] Đã kết nối với Google Sheets API (file).")
+        except Exception as e:
+            log.error(f"[GSheets] Lỗi kết nối qua file: {e}")
+    elif creds_dict:
+        try:
+            from google.oauth2.service_account import Credentials
+            credentials = Credentials.from_service_account_info(creds_dict)
+            gc = gspread.Client(auth=credentials)
+            log.info("[GSheets Cog] Đã kết nối với Google Sheets API (env var).")
+        except Exception as e:
+            log.error(f"[GSheets] Lỗi kết nối qua env var: {e}")
+    else:
+        log.warning("[GSheets] Không tìm thấy credentials (cần GOOGLE_SHEET_CREDENTIALS_FILE hoặc GOOGLE_SHEET_CREDENTIALS_B64)")
 
 # --- Định nghĩa các bí danh cho tên trang tính ---
 # FIX #11: Lowercase toàn bộ key để lookup nhất quán (sheet_name.lower() sẽ luôn khớp)
