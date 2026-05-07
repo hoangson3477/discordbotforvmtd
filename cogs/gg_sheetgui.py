@@ -236,14 +236,16 @@ def fetch_addpoint_audit_logs(
 class GoogleSheets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # self.data_store = bot.data_store -> ĐÃ XÓA
         self.column_map = None 
-
         self.sheet_cache = {}
         self.username_index = {}
+        
+        # Initialize optimized client
+        self.optimized_client = None
+        
         # FIX #3: gc có thể là None nếu credentials lỗi — không gọi trực tiếp trong __init__
         self.spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID) if gc else None
-
+        
         # --- CACHE ---
         self.sheet_data_cache = None 
         self.cache_lock = asyncio.Lock()
@@ -261,6 +263,17 @@ class GoogleSheets(commands.Cog):
         await asyncio.sleep(5) 
         await self._create_column_map()
         await self._load_or_get_cache(force_refresh=True)
+        
+        # Initialize optimized client after spreadsheet is ready
+        if self.spreadsheet:
+            self.optimized_client = OptimizedSheetsClient(
+                self.spreadsheet,
+                cache_ttl=300,  # 5 minutes cache
+                batch_size=100   # Batch 100 updates
+            )
+            log.info("[GSheets Cog] Đã khởi tạo optimized client")
+        else:
+            log.warning("[GSheets Cog] Không thể khởi tạo optimized client - spreadsheet chưa sẵn sàng")
 
     async def _create_column_map(self):
         if not gc:
