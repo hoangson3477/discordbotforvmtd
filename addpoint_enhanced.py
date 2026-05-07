@@ -287,16 +287,26 @@ class EnhancedAddPointCommand:
             }
         )
     
-    async def execute(self, ctx, usernames_str: str, event_type: str, points: float):
+    async def execute(self, ctx, usernames_str: str, event_type: str, points):
         """Execute enhanced addpoint command"""
+        # Convert points to float if it's string
+        try:
+            points = float(points)
+        except (ValueError, TypeError):
+            logger.error(f"[EnhancedAddPoint] Invalid points value: {points}")
+            return
+            
         logger.info(f"[EnhancedAddPoint] Processing: {usernames_str}, {event_type}, {points}")
         
         # Validation
         if not await self._validate_inputs(ctx, usernames_str, event_type, points):
             return
         
-        # Auto-search users
-        usernames = [u.strip() for u in usernames_str.split(",") if u.strip()]
+        # Auto-search users - handle both comma-separated and single usernames
+        if "," in usernames_str:
+            usernames = [u.strip() for u in usernames_str.split(",") if u.strip()]
+        else:
+            usernames = [usernames_str.strip()]
         search_results, not_found = await self.auto_search.find_users_bulk(usernames)
         
         # Process updates for found users
@@ -306,7 +316,7 @@ class EnhancedAddPointCommand:
         embed = VietnameseResponseBuilder.success_embed(search_results, event_type, points, ctx.author)
         await self._send_response(ctx, embed)
     
-    async def _validate_inputs(self, ctx, usernames_str: str, event_type: str, points: float) -> bool:
+    async def _validate_inputs(self, ctx, usernames_str: str, event_type: str, points) -> bool:
         """Validate all inputs with Vietnamese error messages"""
         # Check permissions
         if not self._check_permissions(ctx):
@@ -353,7 +363,7 @@ class EnhancedAddPointCommand:
         
         return any(role.id == required_role_id for role in user.roles)
     
-    async def _process_updates(self, ctx, search_results: List[UserSearchResult], event_type: str, points: float):
+    async def _process_updates(self, ctx, search_results: List[UserSearchResult], event_type: str, points):
         """Process point updates for found users"""
         valid_results = [r for r in search_results if r.status in ["exact_match", "partial_match"]]
         
@@ -431,7 +441,7 @@ class EnhancedAddPointCommand:
         except Exception as e:
             logger.error(f"[EnhancedAddPoint] Sheet update failed: {e}")
     
-    def _calculate_quota_status(self, total_points: float, department_rank: str) -> str:
+    def _calculate_quota_status(self, total_points, department_rank: str) -> str:
         """Calculate quota status in Vietnamese"""
         try:
             total_points = float(total_points)
