@@ -10,8 +10,14 @@ from config import SupabaseConfig, logger
 from utils import safe_db_operation, handle_command_error, validate_achievement_id, safe_embed_send
 from embed_utils import EmbedBuilder, FastInteraction, EmbedCache, create_user_embed, create_achievement_embed, paginate_embeds, send_paginated_response, OptimizedView
 
+# Environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://dmvzxsbptahdfefclsru.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+if not SUPABASE_KEY:
+    raise EnvironmentError("[quan_nhan_info] Thiếu SUPABASE_KEY trong .env")
+
 # Initialize client
-supabase = SupabaseConfig.validate_main()
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def normalize_name(text: str) -> str:
     return text.strip().lower().replace(" ", "_")
