@@ -2,6 +2,7 @@
 Optimized embed utilities to reduce Discord interaction lag
 """
 import discord
+from discord.ext import commands
 import asyncio
 from typing import Optional, List, Dict, Any
 import logging
