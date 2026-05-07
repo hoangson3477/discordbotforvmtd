@@ -519,220 +519,39 @@ class GoogleSheets(commands.Cog):
 
     @commands.command(name="addpoint")
     async def add_point_command(self, ctx, raw_roblox_usernames, event_type, points):
-        """Optimized addpoint command with smart batching"""
+        """Enhanced addpoint command with auto-search and Vietnamese responses"""
         log.info(f"[AddPoint] Processing command from {ctx.author.name}: {raw_roblox_usernames} {event_type} {points}")
         
-        # Use optimized processor
-        if hasattr(self, 'optimized_addpoint'):
-            processor = self.optimized_addpoint
+        # Use enhanced processor
+        if hasattr(self, 'enhanced_addpoint'):
+            processor = self.enhanced_addpoint
         else:
-            processor = OptimizedAddPointCommand(self)
-            self.optimized_addpoint = processor
+            from addpoint_enhanced import EnhancedAddPointCommand
+            processor = EnhancedAddPointCommand(self)
+            self.enhanced_addpoint = processor
         
         await processor.execute(ctx, raw_roblox_usernames, event_type, points)
 
     # --- Slash Command /addpoint ---
-    @discord.app_commands.command(name="addpoint", description="Thêm điểm và cập nhật số lần tham gia cho người dùng Roblox.")
+    @discord.app_commands.command(name="addpoint", description="Thêm điểm và cập nhật số lần tham gia cho người dùng Roblox (hỗ trợ auto-search).")
     @discord.app_commands.describe(
-        roblox_usernames="Username Roblox (ghi tắt được), cách nhau bởi dấu phẩy",
+        roblox_usernames="Username Roblox (có thể nhập tắt, bot sẽ tự tìm)",
         event_type="Loại sự kiện (BT, CO-HOST, PHASE, TRYOUT, SUPERVISION, PT, CT, SPECIAL EVENTS, INSPECTION, PATROL, INACTIVE, REQUESTED)",
-        points="Số điểm muốn thêm (tối đa 15)"
+        points="Số điểm muốn thêm (tối đa 25)"
     )
     async def slash_add_point_command(self, interaction: discord.Interaction, roblox_usernames: str, event_type: str, points: float):
-        """Optimized slash addpoint command"""
+        """Enhanced slash addpoint command"""
         log.info(f"[AddPoint] Processing slash from {interaction.user.name}: {roblox_usernames} {event_type} {points}")
         
-        # Use optimized processor
-        if hasattr(self, 'optimized_addpoint'):
-            processor = self.optimized_addpoint
+        # Use enhanced processor
+        if hasattr(self, 'enhanced_addpoint'):
+            processor = self.enhanced_addpoint
         else:
-            processor = OptimizedAddPointCommand(self)
-            self.optimized_addpoint = processor
+            from addpoint_enhanced import EnhancedAddPointCommand
+            processor = EnhancedAddPointCommand(self)
+            self.enhanced_addpoint = processor
         
         await processor.execute(interaction, roblox_usernames, event_type, points)
-
-    async def _handle_add_point_logic(
-        self,
-        ctx,
-        raw_usernames: str,
-        event_type: str,
-        added_points: float
-    ):
-        # FIX #5: Xác định send_func đồng nhất cho cả prefix command và slash interaction
-        is_interaction = isinstance(ctx, discord.Interaction)
-        send_func = ctx.followup.send if is_interaction else ctx.send
-
-        # ===== PARSE INPUT =====
-        usernames = [u.strip() for u in raw_usernames.split(",") if u.strip()]
-        if not usernames:
-            return await send_func("❌ Danh sách user rỗng.")
-
-        if self.column_map is None:
-            return await send_func("❌ Bot chưa tải xong column map, vui lòng thử lại sau.")
-
-        event_key = event_type.upper()
-        event_col_idx = self.column_map.get(event_key)
-        if event_col_idx is None:
-            return await send_func("❌ Event không hợp lệ (không tìm thấy cột).")
-
-        username_col_idx = self.column_map["USERNAME"]
-        point_col_idx = self.column_map["POINT"]
-        quota_col_idx = self.column_map["QUOTA PROGRESS?"]
-        rank_col_idx = self.column_map["DEPARTMENT RANK"]
-
-        updates_by_sheet = {}   # sheet_name -> list[batch updates]
-        audit_logs = []
-        not_found = []
-
-        author = ctx.author if hasattr(ctx, "author") else ctx.user
-
-        # ===== PROCESS EACH USER =====
-        # FIX: Pre-fetch tất cả sheets song song thay vì fetch tuần tự trong vòng lặp
-        sheet_names = list(SHEET_ALIASES.values())
-        fetched_sheets = await asyncio.gather(*[
-            self.get_sheet_cached_async(s) for s in sheet_names
-        ])
-        all_sheets_map = dict(zip(sheet_names, fetched_sheets))
-
-        for partial_username in usernames:
-            found = False
-
-            for sheet_name in sheet_names:
-                sheet_data = all_sheets_map[sheet_name]
-
-                full_username, status, row_idx = _find_full_username_by_partial(
-                    partial_username=partial_username,
-                    sheet_data=sheet_data,
-                    username_col_idx=username_col_idx,
-                    data_start_row_idx=DATA_START_INDEX
-                )
-
-                if status == "no_match":
-                    continue
-
-                if status == "multiple_matches":
-                    return await send_func(
-                        f"⚠️ `{partial_username}` khớp nhiều user ở `{sheet_name}`:\n"
-                        f"{', '.join(full_username)}"
-                    )
-
-                # ===== FOUND USER =====
-                found = True
-                row = sheet_data[row_idx]
-                department_rank = row[rank_col_idx]
-                before_quota_status = row[quota_col_idx] if len(row) > quota_col_idx else ""
-
-                # --- POINT ---
-                try:
-                    current_points = float(row[point_col_idx] or 0)
-                except ValueError:
-                    current_points = 0.0
-
-                new_points = current_points + added_points
-
-                # --- EVENT COUNT ---
-                try:
-                    current_event_count = int(row[event_col_idx] or 0)
-                except ValueError:
-                    current_event_count = 0
-
-                new_event_count = current_event_count + 1
-
-                # --- QUOTA ---
-                new_quota_status = self._calculate_quota_status(new_points, department_rank)
-
-                # --- BUILD BATCH UPDATE ---
-                updates_by_sheet.setdefault(sheet_name, []).extend([
-                    {
-                        "range": gspread.utils.rowcol_to_a1(row_idx + 1, point_col_idx + 1),
-                        "values": [[str(new_points)]]
-                    },
-                    {
-                        "range": gspread.utils.rowcol_to_a1(row_idx + 1, event_col_idx + 1),
-                        "values": [[str(new_event_count)]]
-                    },
-                    {
-                        "range": gspread.utils.rowcol_to_a1(row_idx + 1, quota_col_idx + 1),
-                        "values": [[new_quota_status]]
-                    }
-                ])
-
-                # --- AUDIT LOG ---
-                audit_logs.append({
-                    "discord_user": author,
-                    "roblox_username": full_username,
-                    "sheet_name": sheet_name,
-                    "event_type": event_type,
-                    "added_points": added_points,
-                    "before_points": current_points,
-                    "after_points": new_points,
-                    "before_quota": before_quota_status,
-                    "quota_status": new_quota_status
-                })
-
-                break  # đã tìm thấy user → không scan sheet khác
-
-            if not found:
-                not_found.append(partial_username)
-
-        # ===== WRITE: 1 BATCH / SHEET =====
-        if self.spreadsheet:
-            for sheet_name, updates in updates_by_sheet.items():
-                worksheet = self.spreadsheet.worksheet(sheet_name)
-                worksheet.batch_update(updates)
-
-                # invalidate cache
-                self.sheet_cache.pop(sheet_name, None)
-                self.username_index.pop(sheet_name, None)
-
-        # ===== SAVE AUDIT =====
-        # FIX: Dùng async version để không block event loop khi ghi Supabase
-        for audit_entry in audit_logs:
-            await log_addpoint_audit_async(**audit_entry)
-
-        # ===== RESPONSE (EMBED) =====
-        author = ctx.author if hasattr(ctx, "author") else ctx.user
-
-        embed = discord.Embed(
-            title="Kết quả thêm điểm",
-            color=discord.Color.green()
-        )
-
-        embed.description = (
-            f"**Sự kiện:** `{event_type}` | "
-            f"**Số Point được thêm:** `{added_points}`\n"
-        )
-
-        lines = []
-        # FIX #6: Đổi tên biến từ 'log' → 'audit_entry' để không shadow module logger
-        for audit_entry in audit_logs:
-            before_quota = audit_entry.get("before_quota") or "Didn't Completed"
-            lines.append(
-                f"**{audit_entry['roblox_username']}**: "
-                f"{audit_entry['before_points']:g} → {audit_entry['after_points']:g}; "
-                f"Quota: {before_quota} → {audit_entry['quota_status']}"
-            )
-
-        if lines:
-            embed.add_field(
-                name="Kết quả",
-                value="\n".join(lines),
-                inline=False
-            )
-
-        if not_found:
-            embed.add_field(
-                name="⚠️ Không tìm thấy",
-                value=", ".join(not_found),
-                inline=False
-            )
-
-        embed.set_footer(
-            text=f"Addpoint bởi {author.display_name}"
-        )
-
-        # FIX: Dùng send_func thống nhất thay vì ctx.send (crash nếu là slash command)
-        await send_func(embed=embed)
 
     # --- Lệnh Prefix !endquota ---
     @commands.command(name='endquota')
