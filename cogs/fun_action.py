@@ -2,8 +2,9 @@ import discord
 from discord.ext import commands
 import asyncio
 import random
-from supabase import create_client, Client
-import os
+import logging
+
+from config import SupabaseConfig, logger
 
 class MarryView(discord.ui.View):
     def __init__(self, proposer, target, save_callback):
@@ -47,10 +48,7 @@ class MarryView(discord.ui.View):
 class FunActions(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # SUPABASE CONFIG
-        SUPABASE_URL = "https://dmvzxsbptahdfefclsru.supabase.co"
-        SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtdnp4c2JwdGFoZGZlZmNsc3J1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQ0Mjk2MywiZXhwIjoyMDg1MDE4OTYzfQ.dQjmeH1zafdur4ViwTxJekV86HfkQ1ODQ8Rh4KXPj5A" # dùng service role
-        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        self.supabase = SupabaseConfig.validate_main()
 
     def get_target(self, ctx):
         if not ctx.message.mentions:

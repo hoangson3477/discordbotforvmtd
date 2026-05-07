@@ -12,23 +12,19 @@ from dotenv import load_dotenv
 from supabase import create_client
 import time
 
-load_dotenv()
+from config import SupabaseConfig, GoogleSheetsConfig, logger
+from sheets_optimization import OptimizedSheetsClient
+from addpoint_optimization import OptimizedAddPointCommand
 
-# Cấu hình Logger
-log = logging.getLogger('my_bot')
+log = logging.getLogger(__name__)
 
-GOOGLE_SHEET_CREDENTIALS_FILE = os.getenv('GOOGLE_SHEET_CREDENTIALS_FILE')
-GOOGLE_SHEET_ID = os.getenv('GOOGLE_SHEET_ID')
+# Environment variables
+GOOGLE_SHEET_ID = GoogleSheetsConfig.SHEET_ID
+GOOGLE_SHEET_CREDENTIALS_FILE = GoogleSheetsConfig.CREDENTIALS_FILE
+GOOGLE_SHEET_CREDENTIALS_B64 = GoogleSheetsConfig.CREDENTIALS_B64
 
-SUPABASE_URL = os.getenv('SUPABASE_URL', "https://dmvzxsbptahdfefclsru.supabase.co")
-# FIX #1: Không hardcode service role key — đọc từ .env để tránh lộ credentials
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-if not SUPABASE_KEY:
-    raise EnvironmentError("[gg_sheetgui] Thiếu SUPABASE_KEY trong .env — vui lòng thêm vào file .env")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
+# Initialize Supabase client
+supabase = SupabaseConfig.validate_main()
 
 # --- CẤU HÌNH ROLE ID ---
 ROLE_ID_ADD_POINT = 1126751064377544704
@@ -385,64 +381,12 @@ class GoogleSheets(commands.Cog):
                 display_rank = rank
 
             # FIX #7: Tạo bản sao để không mutate list gốc từ get_all_values()
-            row = list(row)
-            last_point = point
-
-            sheet_row = START_ROW + idx  # 1-based row number trong sheet
-
-            # FIX nhảy cột: dùng rowcol_to_a1 theo index thực thay vì hardcode "B:G"
-            # Tránh trường hợp sheet có cột trống hoặc thứ tự khác làm lệch range
-            updates.append({
-                "range": gspread.utils.rowcol_to_a1(sheet_row, POINT_RECORD_TOP_COL + 1),
-                "values": [[str(display_rank)]]
-            })
-            updates.append({
-                "range": gspread.utils.rowcol_to_a1(sheet_row, POINT_RECORD_USERNAME_COL + 1),
-                "values": [[row[POINT_RECORD_USERNAME_COL]]]
-            })
-            updates.append({
-                "range": gspread.utils.rowcol_to_a1(sheet_row, POINT_RECORD_POINT_COL + 1),
-                "values": [[row[POINT_RECORD_POINT_COL]]]
-            })
-
-        ws.batch_update(updates)
-
-    def get_sheet_cached(self, sheet_name: str):
-        # FIX #10: Hàm này chỉ nên được gọi qua get_sheet_cached_async từ async context
-        # Giữ lại sync version cho compatibility nội bộ
-        cache = self.sheet_cache.get(sheet_name)
-        now = time.time()
-
-        if cache and now - cache["time"] < SHEET_CACHE_TTL:
-            return cache["data"]
-
-        if not self.spreadsheet:
-            return []
-
-        worksheet = self.spreadsheet.worksheet(sheet_name)
-        data = worksheet.get_all_values()
-
-        # build username index (exact match)
-        if self.column_map is None:
-            return data
-
-        username_col = self.column_map["USERNAME"]
-        index = {}
-
-        for r_idx in range(DATA_START_INDEX, len(data)):
-            row = data[r_idx]
-            if len(row) > username_col and row[username_col]:
-                index[row[username_col].strip().lower()] = r_idx
-
-        self.sheet_cache[sheet_name] = {"data": data, "time": now}
-        self.username_index[sheet_name] = index
-
-        return data
 
     async def get_sheet_cached_async(self, sheet_name: str):
-        # FIX #9 & #10: Wrap blocking gspread I/O trong asyncio.to_thread
-        # để không block event loop khi fetch dữ liệu từ Google Sheets
-        return await asyncio.to_thread(self.get_sheet_cached, sheet_name)
+        """Get sheet data using optimized client"""
+        if not self.optimized_client:
+            return []
+        return await self.optimized_client.get_sheet_data(sheet_name)
 
     def resolve_user_row(self, sheet_name, partial_username):
         index = self.username_index.get(sheet_name, {})
@@ -562,29 +506,17 @@ class GoogleSheets(commands.Cog):
 
     @commands.command(name="addpoint")
     async def add_point_command(self, ctx, raw_roblox_usernames, event_type, points):
-        # Check Role ID cho Addpoint
-        if not self._check_discord_role(ctx.author, ROLE_ID_ADD_POINT):
-            await ctx.reply(
-                embed=discord.Embed(
-                    title="❌ Lỗi Quyền",
-                    description=f"Bạn cần có Role <@&{ROLE_ID_ADD_POINT}> để sử dụng lệnh này.",
-                    color=discord.Color.red()
-                )
-            )
-            return
-
-        # FIX #4: Bắt ValueError nếu người dùng nhập điểm không hợp lệ (vd: "abc")
-        try:
-            parsed_points = float(points)
-        except ValueError:
-            return await ctx.reply("❌ Số điểm không hợp lệ. Vui lòng nhập số (ví dụ: `1`, `2.5`).")
-
-        await self._handle_add_point_logic(
-            ctx,
-            raw_roblox_usernames,
-            event_type,
-            parsed_points
-        )
+        """Optimized addpoint command with smart batching"""
+        log.info(f"[AddPoint] Processing command from {ctx.author.name}: {raw_roblox_usernames} {event_type} {points}")
+        
+        # Use optimized processor
+        if hasattr(self, 'optimized_addpoint'):
+            processor = self.optimized_addpoint
+        else:
+            processor = OptimizedAddPointCommand(self)
+            self.optimized_addpoint = processor
+        
+        await processor.execute(ctx, raw_roblox_usernames, event_type, points)
 
     # --- Slash Command /addpoint ---
     @discord.app_commands.command(name="addpoint", description="Thêm điểm và cập nhật số lần tham gia cho người dùng Roblox.")
@@ -594,15 +526,17 @@ class GoogleSheets(commands.Cog):
         points="Số điểm muốn thêm (tối đa 15)"
     )
     async def slash_add_point_command(self, interaction: discord.Interaction, roblox_usernames: str, event_type: str, points: float):
-        log.info(f"Nhận slash command /addpoint '{roblox_usernames}' '{event_type}' {points} từ {interaction.user.name}")
-        await interaction.response.defer(ephemeral=False) 
+        """Optimized slash addpoint command"""
+        log.info(f"[AddPoint] Processing slash from {interaction.user.name}: {roblox_usernames} {event_type} {points}")
         
-        # Check Role ID cho Addpoint
-        if not self._check_discord_role(interaction.user, ROLE_ID_ADD_POINT):
-            await interaction.followup.send(embed=discord.Embed(title="❌ Lỗi Quyền", description=f"Bạn cần có Role <@&{ROLE_ID_ADD_POINT}> để sử dụng lệnh này.", color=discord.Color.red())) 
-            return
-
-        await self._handle_add_point_logic(interaction, roblox_usernames, event_type, points)
+        # Use optimized processor
+        if hasattr(self, 'optimized_addpoint'):
+            processor = self.optimized_addpoint
+        else:
+            processor = OptimizedAddPointCommand(self)
+            self.optimized_addpoint = processor
+        
+        await processor.execute(interaction, roblox_usernames, event_type, points)
 
     async def _handle_add_point_logic(
         self,

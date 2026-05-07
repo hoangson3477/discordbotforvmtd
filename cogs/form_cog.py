@@ -1,14 +1,12 @@
 import discord
 from discord.ext import commands
 from discord.ui import View, Button, Modal, TextInput
-from supabase import create_client, Client
-import os
+import logging
 
-SUPABASE_URL = "https://dmvzxsbptahdfefclsru.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtdnp4c2JwdGFoZGZlZmNsc3J1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQ0Mjk2MywiZXhwIjoyMDg1MDE4OTYzfQ.dQjmeH1zafdur4ViwTxJekV86HfkQ1ODQ8Rh4KXPj5A" # dùng service role
+from config import SupabaseConfig, logger
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+# Initialize client
+supabase = SupabaseConfig.validate_main()
 
 # =========================
 # MODAL TRẢ LỜI FORM

@@ -1,22 +1,18 @@
 import discord
 from discord.ext import commands
 import aiohttp
-import os
-from supabase import create_client
-from dotenv import load_dotenv
+import logging
 
-load_dotenv()
+from config import SupabaseConfig, RobloxConfig, logger
 
-SUPABASE_URL = "https://dmvzxsbptahdfefclsru.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtdnp4c2JwdGFoZGZlZmNsc3J1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQ0Mjk2MywiZXhwIjoyMDg1MDE4OTYzfQ.dQjmeH1zafdur4ViwTxJekV86HfkQ1ODQ8Rh4KXPj5A" # dùng service role
-ROBLOX_API_KEY = os.getenv("ROBLOX_OPENCLOUD_API_KEY")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Initialize clients
+supabase = SupabaseConfig.validate_main()
+ROBLOX_API_KEY = RobloxConfig.API_KEY
 
 HEADERS = {
     "x-api-key": ROBLOX_API_KEY,
     "Content-Type": "application/json"
-}
+} if ROBLOX_API_KEY else {}
 
 class RobloxBlacklist(commands.Cog):
     def __init__(self, bot):

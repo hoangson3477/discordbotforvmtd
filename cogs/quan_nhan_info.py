@@ -4,24 +4,30 @@ from discord import app_commands
 from supabase import create_client
 import os
 import re
+import asyncio
 
-# Environment variables
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://dmvzxsbptahdfefclsru.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-if not SUPABASE_KEY:
-    raise EnvironmentError("[quan_nhan_info] Thiếu SUPABASE_KEY trong .env")
+from config import SupabaseConfig, logger
+from utils import safe_db_operation, handle_command_error, validate_achievement_id, safe_embed_send
+from embed_utils import EmbedBuilder, FastInteraction, EmbedCache, create_user_embed, create_achievement_embed, paginate_embeds, send_paginated_response, OptimizedView
+
+# Initialize client
+supabase = SupabaseConfig.validate_main()
 
 def normalize_name(text: str) -> str:
     return text.strip().lower().replace(" ", "_")
 
 # ================= VIEW =================
 
-class ArmyInfoView(discord.ui.View):
+class ArmyInfoView(OptimizedView):
+    """Optimized army info view with cached embeds"""
+    
     def __init__(self, cog, member):
         super().__init__(timeout=120)
         self.cog = cog
         self.member = member
         self.current_page = "info"
+        self.info_embed = None
+        self.achievement_embed = None
         self.update_buttons()
 
     def update_buttons(self):
@@ -32,62 +38,74 @@ class ArmyInfoView(discord.ui.View):
                 elif item.custom_id == "achievements":
                     item.disabled = self.current_page == "achievements"
 
-    async def build_info_embed(self):
-        embed = discord.Embed(title="Thông tin Quân nhân", color=discord.Color.green())
-        embed.add_field(name="Tên", value=self.cog.clean_name(self.member.display_name), inline=False)
-        embed.add_field(name="Quân hàm", value=self.cog.get_rank(self.member), inline=False)
-        embed.add_field(name="Chức vụ", value=self.cog.get_position(self.member), inline=False)
-        embed.set_footer(text=f"ID: {self.member.id}")
-        return embed
+    async def get_info_embed(self):
+        """Cache info embed"""
+        if self.info_embed is None:
+            self.info_embed = create_user_embed(
+                self.member, 
+                title="Thông tin Quân nhân"
+            )
+            # Add fields using builder (faster)
+            self.info_embed.add_field("Tên", self.cog.clean_name(self.member.display_name), False)
+            self.info_embed.add_field("Quân hàm", self.cog.get_rank(self.member), False)
+            self.info_embed.add_field("Chức vụ", self.cog.get_position(self.member), False)
+            self.info_embed.set_footer(text=f"ID: {self.member.id}")
+        return self.info_embed
 
-    async def build_achievement_embed(self):
-        data = self.cog.supabase.table("user_achievements") \
-            .select("achievements(display_name)") \
-            .eq("user_id", self.member.id) \
-            .execute()
-
-        names = []
-
-        for row in data.data:
-            a = row["achievements"]
-            if a:
-                names.append(a["display_name"])
-
-        if not names:
-            content = "Không có thành tựu"
-        else:
-            content = "\n".join(f"• {n}" for n in names)
-
-        embed = discord.Embed(title="Thành tựu", color=discord.Color.gold())
-        embed.description = content
-        embed.set_footer(text=f"Tổng: {len(names)} thành tựu")
-
-        return embed    
+    async def get_achievement_embed(self):
+        """Cache achievement embed"""
+        if self.achievement_embed is None:
+            @safe_db_operation("get_user_achievements")
+            async def fetch_achievements():
+                return self.cog.supabase.table("user_achievements") \
+                    .select("achievements(display_name)") \
+                    .eq("user_id", self.member.id) \
+                    .execute()
+            
+            data = await fetch_achievements()
+            names = []
+            
+            for row in data.data or []:
+                a = row["achievements"]
+                if a:
+                    names.append(a["display_name"])
+            
+            if not names:
+                description = "Không có thành tựu"
+            else:
+                description = "\n".join(f"• {n}" for n in names)
+            
+            self.achievement_embed = EmbedBuilder(title="Thành tựu", color=discord.Color.gold()) \
+                .set_description(description) \
+                .set_footer(text=f"Tổng: {len(names)} thành tựu") \
+                .build()
+        return self.achievement_embed
 
     @discord.ui.button(label="Thông tin cơ bản", style=discord.ButtonStyle.secondary, custom_id="info")
     async def show_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page = "info"
         self.update_buttons()
-        embed = await self.build_info_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        embed = await self.get_info_embed()
+        await FastInteraction.safe_edit(interaction, embed, self)
 
     @discord.ui.button(label="Thành tựu", style=discord.ButtonStyle.primary, custom_id="achievements")
     async def show_achievements(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page = "achievements"
         self.update_buttons()
-        embed = await self.build_achievement_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        embed = await self.get_achievement_embed()
+        await FastInteraction.safe_edit(interaction, embed, self)
 
-class AchievementHubView(discord.ui.View):
-    """Permanent shared view - state stored in message footer"""
+class AchievementHubView(OptimizedView):
+    """Optimized achievement hub with caching and fast interactions"""
     
     def __init__(self, cog):
         super().__init__(timeout=None)  # No timeout = permanent
         self.cog = cog
         self.per_page = 10
+        self.embed_cache = EmbedCache(ttl=300)  # 5 minutes cache
         self.add_page_select()
         self.add_filter_select()
-
+    
     def parse_footer(self, embed: discord.Embed):
         """Parse state from footer text"""
         text = embed.footer.text if embed.footer else ""
@@ -826,27 +844,39 @@ class ArmySystem(commands.Cog):
         await ctx.send(f"Đã tạo thành tựu **{name}** với ID: **{new_id}**")
 
     @commands.command(name="givett")
-    async def givett(self, ctx, member: discord.Member, achievement_id: int):
+    async def givett(self, ctx, member: discord.Member, achievement_id: str):
         if not await self.is_whitelisted(ctx, "assigntt"):
             return await ctx.send("Bạn không có quyền.")
-
-        ach = self.supabase.table("achievements") \
-            .select("display_name") \
-            .eq("id", achievement_id) \
-            .execute()
-
-        if not ach.data:
-            return await ctx.send("ID thành tựu không tồn tại.")
-
-        try:
-            self.supabase.table("user_achievements").insert({
+        
+        # Validate achievement ID
+        aid = validate_achievement_id(achievement_id)
+        if aid is None:
+            return await ctx.send("❌ ID thành tựu không hợp lệ. Phải là số nguyên dương.")
+        
+        @safe_db_operation("givett")
+        async def get_achievement():
+            return supabase.table("achievements") \
+                .select("display_name") \
+                .eq("id", aid) \
+                .execute()
+        
+        ach_result = await get_achievement()
+        if not ach_result or not ach_result.data:
+            return await ctx.send("❌ ID thành tựu không tồn tại.")
+        
+        @safe_db_operation("givett")
+        async def assign_achievement():
+            supabase.table("user_achievements").insert({
                 "user_id": member.id,
-                "achievement_id": achievement_id
+                "achievement_id": aid
             }).execute()
-        except:
-            return await ctx.send("Người này đã có thành tựu này.")
-
-        await ctx.send(f"Đã gán **{ach.data[0]['display_name']}** cho {member.display_name}")
+            return True
+        
+        success = await assign_achievement()
+        if not success:
+            return await ctx.send("❌ Người này đã có thành tựu này.")
+        
+        await ctx.send(f"✅ Đã gán **{ach_result.data[0]['display_name']}** cho {member.display_name}")
 
     @commands.command(name="listtt")
     async def listtt(self, ctx):
@@ -859,42 +889,66 @@ class ArmySystem(commands.Cog):
 
 
     @commands.command(name="removett")
-    async def removett(self, ctx, member: discord.Member, achievement_id: int):
+    async def removett(self, ctx, member: discord.Member, achievement_id: str):
         if not await self.is_whitelisted(ctx, "removett"):
             return await ctx.send("Bạn không có quyền.")
-
-        res = self.supabase.table("user_achievements") \
-            .delete() \
-            .eq("user_id", member.id) \
-            .eq("achievement_id", achievement_id) \
-            .execute()
-
-        if not res.data:
-            return await ctx.send("Người này không có thành tựu đó.")
-
-        await ctx.send(f"Đã gỡ thành tựu ID {achievement_id} khỏi {member.display_name}")
+        
+        # Validate achievement ID
+        aid = validate_achievement_id(achievement_id)
+        if aid is None:
+            return await ctx.send("❌ ID thành tựu không hợp lệ. Phải là số nguyên dương.")
+        
+        @safe_db_operation("removett")
+        async def remove_achievement():
+            res = supabase.table("user_achievements") \
+                .delete() \
+                .eq("user_id", member.id) \
+                .eq("achievement_id", aid) \
+                .execute()
+            return res.data
+        
+        deleted_data = await remove_achievement()
+        if not deleted_data:
+            return await ctx.send("❌ Người này không có thành tựu đó.")
+        
+        await ctx.send(f"✅ Đã gỡ thành tựu ID {aid} khỏi {member.display_name}")
 
     @commands.command(name="deletett")
-    async def deletett(self, ctx, achievement_id: int):
+    async def deletett(self, ctx, achievement_id: str):
         if not await self.is_whitelisted(ctx, "deletett"):
             return await ctx.send("Bạn không có quyền.")
-
-        ach = self.supabase.table("achievements") \
-            .select("display_name") \
-            .eq("id", achievement_id) \
-            .execute()
-
-        if not ach.data:
-            return await ctx.send("ID không tồn tại.")
-
-        name = ach.data[0]["display_name"]
-
-        self.supabase.table("achievements") \
-            .delete() \
-            .eq("id", achievement_id) \
-            .execute()
-
-        await ctx.send(f"Đã xoá thành tựu **{name}** (ID: {achievement_id})")
+        
+        # Validate achievement ID
+        aid = validate_achievement_id(achievement_id)
+        if aid is None:
+            return await ctx.send("❌ ID thành tựu không hợp lệ. Phải là số nguyên dương.")
+        
+        @safe_db_operation("deletett")
+        async def get_achievement():
+            return supabase.table("achievements") \
+                .select("display_name") \
+                .eq("id", aid) \
+                .execute()
+        
+        ach_result = await get_achievement()
+        if not ach_result or not ach_result.data:
+            return await ctx.send("❌ ID không tồn tại.")
+        
+        name = ach_result.data[0]["display_name"]
+        
+        @safe_db_operation("deletett")
+        async def delete_achievement():
+            res = supabase.table("achievements") \
+                .delete() \
+                .eq("id", aid) \
+                .execute()
+            return res.data
+        
+        deleted_data = await delete_achievement()
+        if not deleted_data:
+            return await ctx.send("❌ Không thể xoá thành tựu này.")
+        
+        await ctx.send(f"✅ Đã xoá thành tựu **{name}** (ID: {aid})")
 
     @commands.command(name="newpos")
     async def newpos(self, ctx, *, content: str):
