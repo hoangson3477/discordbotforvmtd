@@ -422,7 +422,7 @@ class GoogleSheets(commands.Cog):
 
     def _calculate_quota_status(self, total_points: float, department_rank: str) -> str:
         """
-        Xác định trạng thái quota dựa trên tổng điểm và Department Rank
+        Determine quota status based on total points and Department Rank
         """
 
         try:
@@ -496,7 +496,7 @@ class GoogleSheets(commands.Cog):
         except:
             current = 0.0
 
-        # ĐỦ ĐIỂM → FULL BAR + THÔNG BÁO
+        # ENOUGH POINTS → FULL BAR + NOTIFICATION
         if current >= target:
             bar = "🟩" * length
             return (
@@ -504,7 +504,7 @@ class GoogleSheets(commands.Cog):
                 f"`{current:.1f}/{target}` • 🎉 **Awaiting Promote**"
             )
 
-        # CHƯA ĐỦ → BAR THƯỜNG
+        # NOT ENOUGH → NORMAL BAR
         ratio = max(0, current / target)
         filled = int(ratio * length)
         empty = length - filled
