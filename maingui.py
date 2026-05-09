@@ -8,6 +8,9 @@ import logging
 import aiohttp
 from dotenv import load_dotenv
 import asyncpg
+import psutil
+import sys
+from datetime import datetime
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -155,6 +158,7 @@ class MyBot(commands.Bot):
         super().__init__(*args, **kwargs)
         self.http_session = None
         self.slash_sync = None
+        self.start_time = datetime.now()
 
     async def setup_hook(self):
         # AIOHTTP session
@@ -314,6 +318,77 @@ class AdminCog(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(
                 f"❌ `{e}`",
+                ephemeral=True
+            )
+
+    @app_commands.command(
+        name="health",
+        description="Check bot health and metrics"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def health_check(
+        self,
+        interaction: discord.Interaction
+    ):
+        """Bot health check with detailed metrics"""
+        try:
+            # Calculate uptime
+            uptime = datetime.now() - interaction.client.start_time
+            days = uptime.days
+            hours, remainder = divmod(uptime.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            uptime_str = f"{days}d {hours}h {minutes}m {seconds}s"
+
+            # Get system metrics
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
+            memory_used = f"{memory.used / (1024**3):.2f}GB"
+            memory_total = f"{memory.total / (1024**3):.2f}GB"
+
+            # Database status
+            db_status = "✅ Connected" if interaction.client.db else "❌ Disconnected"
+            
+            # Cog count
+            cog_count = len(interaction.client.extensions)
+
+            # HTTP session status
+            http_status = "✅ Active" if interaction.client.http_session else "❌ Inactive"
+
+            # Create embed
+            embed = discord.Embed(
+                title="🏥 Bot Health Check",
+                color=discord.Color.green() if interaction.client.db else discord.Color.red(),
+                timestamp=datetime.now()
+            )
+
+            embed.add_field(name="⏱️ Uptime", value=f"`{uptime_str}`", inline=True)
+            embed.add_field(name="📊 Cogs Loaded", value=f"`{cog_count}`", inline=True)
+            embed.add_field(name="💾 Database", value=db_status, inline=True)
+            
+            embed.add_field(name="🖥️ CPU Usage", value=f"`{cpu_percent:.1f}%`", inline=True)
+            embed.add_field(name="🧠 Memory Usage", value=f"`{memory_percent:.1f}%`", inline=True)
+            embed.add_field(name="💾 Memory Details", value=f"`{memory_used}/{memory_total}`", inline=True)
+            
+            embed.add_field(name="🌐 HTTP Session", value=http_status, inline=True)
+            embed.add_field(name="🤖 Bot Version", value=f"`discord.py {discord.__version__}`", inline=True)
+            embed.add_field(name="🐍 Python Version", value=f"`{sys.version.split()[0]}`", inline=True)
+
+            # Add dev mode status
+            dev_mode = "🔧 Enabled" if DEV_MODE else "🔒 Production"
+            embed.add_field(name="🔧 Dev Mode", value=dev_mode, inline=False)
+
+            embed.set_footer(
+                text=f"Requested by {interaction.user.name}",
+                icon_url=interaction.user.avatar.url if interaction.user.avatar else None
+            )
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"[HEALTH CHECK ERROR] {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Health check failed: `{e}`",
                 ephemeral=True
             )
 
