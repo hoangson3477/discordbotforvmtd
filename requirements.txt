@@ -18,6 +18,9 @@ python-dotenv>=1.0.0,<2.0.0
 # File Watching for Auto-reload
 watchdog>=3.0.0,<4.0.0
 
+# System Metrics for Health Check
+psutil>=5.9.0,<6.0.0
+
 # Spotify API (if using spotipy in spotify cog)
 # spotipy>=2.23.0,<3.0.0
 
