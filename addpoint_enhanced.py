@@ -331,7 +331,7 @@ class EnhancedAddPointCommand:
             return False
         
         # Validate event type
-        valid_events = ['BT', 'CO-HOST', 'PHASE', 'TRYOUT', 'SUPERVISION', 'PT', 'CT', 'SPECIAL EVENTS', 'INSPECTION', 'PATROL', 'INACTIVE', 'REQUESTED']
+        valid_events = ['BT', 'CO-HOST', 'PHASE', 'TRYOUT', 'SUPERVISION', 'PT', 'CT', 'EVENTS', 'INSPECTION', 'PATROL', 'INACTIVE', 'REQUESTED']
         if event_type.upper() not in valid_events:
             embed = VietnameseResponseBuilder.error_embed(
                 "validation", 

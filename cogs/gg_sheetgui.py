@@ -536,7 +536,7 @@ class GoogleSheets(commands.Cog):
     @discord.app_commands.command(name="addpoint", description="Thêm điểm và cập nhật số lần tham gia cho người dùng Roblox (hỗ trợ auto-search).")
     @discord.app_commands.describe(
         roblox_usernames="Username Roblox (có thể nhập tắt, bot sẽ tự tìm)",
-        event_type="Loại sự kiện (BT, CO-HOST, PHASE, TRYOUT, SUPERVISION, PT, CT, SPECIAL EVENTS, INSPECTION, PATROL, INACTIVE, REQUESTED)",
+        event_type="Loại sự kiện (BT, CO-HOST, PHASE, TRYOUT, SUPERVISION, PT, CT, EVENTS, INSPECTION, PATROL, INACTIVE, REQUESTED)",
         points="Số điểm muốn thêm (tối đa 25)"
     )
     async def slash_add_point_command(self, interaction: discord.Interaction, roblox_usernames: str, event_type: str, points: float):
