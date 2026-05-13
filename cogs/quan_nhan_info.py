@@ -778,7 +778,7 @@ class ArmySystem(commands.Cog):
         target = member or ctx.author
 
         view = ArmyInfoView(self, target)
-        embed = await view.build_info_embed()
+        embed = await view.get_info_embed()
         await ctx.send(embed=embed, view=view)
 
 
@@ -788,7 +788,7 @@ class ArmySystem(commands.Cog):
         target = member or interaction.user
 
         view = ArmyInfoView(self, target)
-        embed = await view.build_info_embed()
+        embed = await view.get_info_embed()
         await interaction.response.send_message(embed=embed, view=view)
 
     @commands.command(name="whitelist")

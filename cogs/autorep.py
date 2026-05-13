@@ -2,6 +2,10 @@ import discord
 from discord.ext import commands
 import json
 import os
+import time
+import logging
+
+logger = logging.getLogger("autorep")
 
 # =============================================
 # FILE: cogs/auto_reply.py
@@ -22,16 +26,23 @@ DATA_FILE = "data/auto_reply_rules.json"   # Nơi lưu rules vĩnh viễn
 
 
 def load_rules() -> dict:
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.error(f"Lỗi khi load auto-reply rules: {e}")
     return dict(DEFAULT_RULES)
 
 
 def save_rules(rules: dict):
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(rules, f, ensure_ascii=False, indent=2)
+    try:
+        os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(rules, f, ensure_ascii=False, indent=2)
+    except (OSError, json.JSONEncodeError) as e:
+        logger.error(f"Lỗi khi save auto-reply rules: {e}")
+        raise
 
 
 class AutoReply(commands.Cog):
@@ -43,6 +54,8 @@ class AutoReply(commands.Cog):
         self.bot = bot
         self.rules: dict[str, dict[str, str]] = load_rules()
         # rules[user_id][trigger] = response
+        self.last_reply = {}  # user_id -> timestamp for rate limiting
+        self.RATE_LIMIT = 5  # seconds between replies per user
 
     # ------------------------------------------------------------------
     # LẮNG NGHE TIN NHẮN
@@ -57,13 +70,25 @@ class AutoReply(commands.Cog):
         if user_id not in self.rules:
             return
 
+        # Rate limiting: check if user recently got a reply
+        now = time.time()
+        if user_id in self.last_reply:
+            if now - self.last_reply[user_id] < self.RATE_LIMIT:
+                return  # Skip if within rate limit
+
         content = message.content.strip().lower()
 
         for trigger, response in self.rules[user_id].items():
             # So sánh không phân biệt hoa/thường; dùng "in" để bắt cả câu chứa trigger
             if trigger.lower() in content:
-                await message.channel.send(response)
-                break   # Chỉ gửi 1 reply đầu tiên khớp, bỏ break nếu muốn gửi tất cả
+                try:
+                    await message.channel.send(response)
+                    self.last_reply[user_id] = now  # Update last reply time
+                    break   # Chỉ gửi 1 reply đầu tiên khớp, bỏ break nếu muốn gửi tất cả
+                except discord.Forbidden:
+                    logger.warning(f"Bot không có quyền gửi tin nhắn trong channel {message.channel.id}")
+                except Exception as e:
+                    logger.error(f"Lỗi khi gửi auto-reply: {e}")
 
     # ------------------------------------------------------------------
     # LỆNH QUẢN LÝ (chỉ admin / owner mới dùng được)
@@ -96,6 +121,14 @@ class AutoReply(commands.Cog):
         Cú pháp: !ar add <user_id> <trigger> | <response>
         Ví dụ  : !ar add 123456789 hello | Chào bạn! 👋
         """
+        # Validate user_id format
+        try:
+            user_id_int = int(user_id)
+            if user_id_int <= 0:
+                return await ctx.send("❌ User ID phải là số dương.")
+        except ValueError:
+            return await ctx.send("❌ User ID không hợp lệ. Phải là số.")
+        
         if "|" not in args:
             return await ctx.send("❌ Cần dùng dấu `|` để phân cách trigger và response.\nVí dụ: `!ar add 123456 hello | Xin chào!`")
 
@@ -105,15 +138,26 @@ class AutoReply(commands.Cog):
 
         if not trigger or not response:
             return await ctx.send("❌ Trigger hoặc response không được để trống.")
+        
+        # Validate content length
+        if len(trigger) > 100:
+            return await ctx.send("❌ Trigger quá dài (tối đa 100 ký tự).")
+        
+        if len(response) > 1000:
+            return await ctx.send("❌ Response quá dài (tối đa 1000 ký tự).")
 
-        self.rules.setdefault(user_id, {})[trigger] = response
-        save_rules(self.rules)
-
-        await ctx.send(
-            f"✅ Đã thêm rule cho user `{user_id}`:\n"
-            f"**Trigger:** `{trigger}`\n"
-            f"**Response:** {response}"
-        )
+        try:
+            self.rules.setdefault(user_id, {})[trigger] = response
+            save_rules(self.rules)
+            
+            await ctx.send(
+                f"✅ Đã thêm rule cho user `{user_id}`:\n"
+                f"**Trigger:** `{trigger}`\n"
+                f"**Response:** {response}"
+            )
+        except Exception as e:
+            logger.error(f"Lỗi khi lưu rule: {e}")
+            await ctx.send("❌ Lỗi khi lưu rule. Vui lòng thử lại.")
 
     # ── Xóa rule ───────────────────────────────────────────────────────
     @autoreply.command(name="remove", aliases=["rm", "del"])

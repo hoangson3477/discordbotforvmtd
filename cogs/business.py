@@ -128,7 +128,7 @@ class Business(commands.Cog):
                         cash = cash - $2,
                         updated_at = NOW()
                     WHERE id = $3
-                """, amount, cost, biz["business_id"])
+                """, amount, cost, biz["id"])
 
         await ctx.reply(f"Đã thuê {amount} nhân viên.")
 
@@ -145,11 +145,11 @@ class Business(commands.Cog):
             async with conn.transaction():
 
                 biz = await conn.fetchrow("""
-                    SELECT id, cash, {}
+                    SELECT id, cash, $1::text
                     FROM businesses
-                    WHERE user_id = $1 AND guild_id = $2
+                    WHERE user_id = $2 AND guild_id = $3
                     FOR UPDATE
-                """.format(column), ctx.author.id, ctx.guild.id)
+                """, column, ctx.author.id, ctx.guild.id)
 
                 if not biz:
                     return await ctx.reply("Chưa có doanh nghiệp.")
@@ -160,12 +160,12 @@ class Business(commands.Cog):
                 if biz["cash"] < upgrade_cost:
                     return await ctx.reply(f"Cần {upgrade_cost} để nâng cấp.")
 
-                await conn.execute(f"""
+                await conn.execute("""
                     UPDATE businesses
-                    SET {column} = {column} + 1,
-                        cash = cash - $1
-                    WHERE id = $2
-                """, upgrade_cost, biz["business_id"])
+                    SET $1::text = $1::text + 1,
+                        cash = cash - $2
+                    WHERE id = $3
+                """, column, upgrade_cost, biz["id"])
 
         await ctx.reply(f"Đã nâng cấp {column} lên {current + 1}")
 
@@ -199,7 +199,7 @@ class Business(commands.Cog):
                     SET branch_count = branch_count + 1,
                         cash = cash - $1
                     WHERE id = $2
-                """, cost, biz["business_id"])
+                """, cost, biz["id"])
 
         await ctx.reply("Đã mở thêm chi nhánh.")
 
@@ -493,7 +493,7 @@ class Business(commands.Cog):
 
         except Exception as e:
             logger.exception(f"CRITICAL ERROR in profit_task: {e}")
-    
+
     @tasks.loop(hours=6)
     async def market_cycle(self):
 

@@ -143,7 +143,7 @@ class FormView(discord.ui.View):
             "answers": answers
         }).execute()
 
-        await dm.send("✅ Bạn đã hoàn thành form!")
+        await dm.send("✅ Bạn đã Completed form!")
 
         # gửi log staff
         if self.form.get("staff_channel_id"):

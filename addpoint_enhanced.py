@@ -402,6 +402,7 @@ class EnhancedAddPointCommand:
                     continue
                 
                 row = sheet_data[update.row_index]
+                username = row[column_map.get("USERNAME")] if len(row) > column_map.get("USERNAME", 0) else "Unknown"
                 
                 # Update event count
                 current_event = int(row[event_col_idx]) if row[event_col_idx] else 0
@@ -413,7 +414,19 @@ class EnhancedAddPointCommand:
                 
                 # Calculate quota status
                 department_rank = row[column_map.get("DEPARTMENT RANK")] if len(row) > column_map.get("DEPARTMENT RANK", 0) else ""
+                old_quota = self._calculate_quota_status(current_points, department_rank)
                 new_quota = self._calculate_quota_status(new_points, department_rank)
+                
+                # Log detailed changes
+                logger.info(
+                    f"[EnhancedAddPoint] POINT UPDATE | "
+                    f"User: {username} | "
+                    f"Sheet: {sheet_name} | "
+                    f"Event: {event_type} | "
+                    f"Points: {current_points} → {new_points} (+{points}) | "
+                    f"Quota: {old_quota} → {new_quota} | "
+                    f"Rank: {department_rank}"
+                )
                 
                 # Add batch update
                 from gspread.utils import rowcol_to_a1
@@ -456,31 +469,31 @@ class EnhancedAddPointCommand:
         # Define quotas by rank
         if rank == "junior directing staff":
             if total_points > 20:
-                return "Chờ thăng chức"
+                return "Awaiting Promote"
             elif total_points >= 4:
-                return "Hoàn thành"
+                return "Completed"
             elif total_points > 0:
-                return "Hoàn thành một nửa"
+                return "Half-completed"
             else:
-                return "Chưa hoàn thành"
+                return "Didn't Completed"
         
         if rank in ["directing staff", "senior directing staff", "head directing staff"]:
             if total_points > 30:
-                return "Chờ thăng chức"
+                return "Awaiting Promote"
             elif total_points >= 4:
-                return "Hoàn thành"
+                return "Completed"
             elif total_points > 0:
-                return "Hoàn thành một nửa"
+                return "Half-completed"
             else:
-                return "Chưa hoàn thành"
+                return "Didn't Completed"
         
         # Default
         if total_points >= 4:
-            return "Hoàn thành"
+            return "Completed"
         elif total_points > 0:
-            return "Hoàn thành một nửa"
+            return "Half-completed"
         
-        return "Chưa hoàn thành"
+        return "Didn't Completed"
     
     async def _send_response(self, ctx, embed: discord.Embed):
         """Send response using appropriate method"""

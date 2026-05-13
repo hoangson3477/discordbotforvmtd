@@ -125,7 +125,7 @@ class SpamEvent(commands.Cog):
                 content=(
                     f"**ĐANG SPAM EVENT**\n"
                     f"Vừa xong: `{member}`\n"
-                    f"Hoàn thành: **{completed}/{len(tasks)}**\n"
+                    f"Completed: **{completed}/{len(tasks)}**\n"
                     f"Tổng DM đã gửi: **{total_sent}**"
                 )
             )

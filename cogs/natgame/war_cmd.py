@@ -279,7 +279,7 @@ class War(commands.Cog):
         )
 
         # Thông tin tổng quan
-        status_text = "✅ Hoàn thành" if war_info["status"] == "finished" else "⏳ Đang diễn ra"
+        status_text = "✅ Completed" if war_info["status"] == "finished" else "⏳ Đang diễn ra"
         winner_text = "🎉 " + (attacker_name if war_info.get("winner_nation_id") == war_info["attacker_nation_id"] else defender_name) if war_info.get("winner_nation_id") else "❓ Chưa có"
 
         embed.add_field(

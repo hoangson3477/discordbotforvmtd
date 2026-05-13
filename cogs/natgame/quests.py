@@ -120,7 +120,7 @@ class Quests(commands.Cog):
 
         embed = discord.Embed(
             title=f"📜 Nhiệm vụ hàng ngày - {nation['name']}",
-            description="Hoàn thành để nhận thưởng!",
+            description="Completed để nhận thưởng!",
             color=discord.Color.gold()
         )
 
@@ -128,7 +128,7 @@ class Quests(commands.Cog):
             prog = progress_map.get(quest["id"], {"progress": 0, "completed": False})
 
             if prog["completed"]:
-                status = "✅ Hoàn thành"
+                status = "✅ Completed"
             else:
                 status = f"⏳ Đang làm ({prog['progress']}/?)"
 
@@ -154,7 +154,7 @@ class Quests(commands.Cog):
         if not nation:
             return await ctx.reply("❌ Bạn chưa có quốc gia.")
 
-        # Lấy achievements đã hoàn thành
+        # Lấy achievements đã Completed
         completed = supabase.table("achievements").select("achievement_id").eq("nation_id", nation["id"]).execute().data
         completed_ids = {a["achievement_id"] for a in completed}
 
@@ -193,14 +193,14 @@ class Quests(commands.Cog):
 
     @commands.command(name="claim")
     async def claim_rewards(self, ctx):
-        """Nhận thưởng nhiệm vụ đã hoàn thành"""
+        """Nhận thưởng nhiệm vụ đã Completed"""
         user_id = str(ctx.author.id)
 
         nation = supabase.table("nations").select("id, money").eq("owner_id", user_id).single().execute().data
         if not nation:
             return await ctx.reply("❌ Bạn chưa có quốc gia.")
 
-        # Lấy quests đã hoàn thành nhưng chưa nhận thưởng
+        # Lấy quests đã Completed nhưng chưa nhận thưởng
         completed_quests = supabase.table("quest_progress") \
             .select("quest_id") \
             .eq("nation_id", nation["id"]) \
@@ -209,7 +209,7 @@ class Quests(commands.Cog):
             .execute().data
 
         if not completed_quests:
-            return await ctx.reply("⏳ Không có nhiệm vụ nào để nhận thưởng. Hoàn thành nhiệm vụ trước!")
+            return await ctx.reply("⏳ Không có nhiệm vụ nào để nhận thưởng. Completed nhiệm vụ trước!")
 
         total_money = 0
         total_exp = 0
