@@ -52,9 +52,9 @@ class ArmyInfoView(OptimizedView):
                 title="Thông tin Quân nhân"
             )
             # Add fields using builder (faster)
-            self.info_embed.add_field("Tên", self.cog.clean_name(self.member.display_name), False)
-            self.info_embed.add_field("Quân hàm", self.cog.get_rank(self.member), False)
-            self.info_embed.add_field("Chức vụ", self.cog.get_position(self.member), False)
+            self.info_embed.add_field(name="Tên", value=self.cog.clean_name(self.member.display_name), inline=False)
+            self.info_embed.add_field(name="Quân hàm", value=self.cog.get_rank(self.member), inline=False)
+            self.info_embed.add_field(name="Chức vụ", value=self.cog.get_position(self.member), inline=False)
             self.info_embed.set_footer(text=f"ID: {self.member.id}")
         return self.info_embed
 
