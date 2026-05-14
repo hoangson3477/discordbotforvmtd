@@ -140,12 +140,12 @@ class ReplyModal(discord.ui.Modal, title="Trả lời submission"):
 
             sub_type_label = "Hỗ trợ" if sub["type"] == "support" else "Tin nhắn"
             embed = discord.Embed(
-                title=f"📬 Phản hồi cho yêu cầu [{sub_type_label}]",
+                title=f"Phản hồi cho yêu cầu [{sub_type_label}]",
                 description=self.reply_content.value,
                 color=discord.Color.green(),
             )
             embed.add_field(
-                name="📋 Mã submission",
+                name="Mã submission",
                 value=f"`{self.sub_id}`",
                 inline=False,
             )
@@ -162,7 +162,7 @@ class ReplyModal(discord.ui.Modal, title="Trả lời submission"):
             await _disable_reply_button(interaction, self.sub_id)
 
             await interaction.response.send_message(
-                f"✅ Đã gửi reply cho `{self.sub_id}`.", ephemeral=True
+                f"Đã gửi reply cho `{self.sub_id}`.", ephemeral=True
             )
 
         except discord.Forbidden:
@@ -486,11 +486,11 @@ class SupportHub(commands.Cog):
 
         # Tạo panel embed + persistent view
         embed = discord.Embed(
-            title="🛎️ Support Hub",
+            title="Support/Message Hub",
             description=(
-                "Cần hỗ trợ hoặc muốn gửi tin nhắn đến ban quản trị?\n\n"
-                "• **🎫 Support** — Mở ticket hỗ trợ kỹ thuật\n"
-                "• **✉️ Message** — Gửi tin nhắn trực tiếp"
+                "Trong khoảng tgian bloxshit cai game làm đồ án thì ae có hỗ trợ gì thì như dưới. Mọi tin nhắn sẽ về Zalo thg bloxshit (not discord)\n\n"
+                "• **Support** — Mở ticket hỗ trợ về vấn đề con RoVMTD\n"
+                "• **Message** — Gửi tin nhắn về Zalo cho thg bloxshit (do bloxshit cai discord + code không thèm vào dis lấy ttin fr)"
             ),
             color=discord.Color.blurple(),
         )
