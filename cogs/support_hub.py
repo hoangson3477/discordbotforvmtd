@@ -420,6 +420,7 @@ class SupportHub(commands.Cog):
         guild_id="ID của guild muốn đặt panel",
         channel_id="ID của channel sẽ nhận panel embed",
         reply_channel_id="ID channel tại guild đó để nhận reply từ hub",
+        ping_role_id="(Tuỳ chọn) ID role sẽ được ping khi gửi panel",
     )
     async def postpanel_slash(
         self,
@@ -427,10 +428,12 @@ class SupportHub(commands.Cog):
         guild_id: str,
         channel_id: str,
         reply_channel_id: str,
+        ping_role_id: str = None,
     ):
         await interaction.response.defer(ephemeral=True)
         result = await self._do_postpanel(
-            int(guild_id), int(channel_id), int(reply_channel_id)
+            int(guild_id), int(channel_id), int(reply_channel_id),
+            ping_role_id=int(ping_role_id) if ping_role_id else None,
         )
         await interaction.followup.send(result, ephemeral=True)
 
@@ -445,8 +448,9 @@ class SupportHub(commands.Cog):
         guild_id: int,
         channel_id: int,
         reply_channel_id: int,
+        ping_role_id: int = None,
     ):
-        result = await self._do_postpanel(guild_id, channel_id, reply_channel_id)
+        result = await self._do_postpanel(guild_id, channel_id, reply_channel_id, ping_role_id=ping_role_id)
         await ctx.reply(result)
 
     # ──────────────────────────────────────
@@ -457,6 +461,7 @@ class SupportHub(commands.Cog):
         guild_id: int,
         channel_id: int,
         reply_channel_id: int,
+        ping_role_id: int = None,
     ) -> str:
         # Verify bot có trong guild
         target_guild = self.bot.get_guild(guild_id)
@@ -475,6 +480,13 @@ class SupportHub(commands.Cog):
                 return f"❌ Không tìm thấy channel `{channel_id}` trong guild `{guild_id}`."
             except discord.Forbidden:
                 return f"❌ Bot không có quyền truy cập channel `{channel_id}`."
+
+        # Verify role nếu có truyền vào
+        ping_role = None
+        if ping_role_id:
+            ping_role = target_guild.get_role(ping_role_id)
+            if not ping_role:
+                return f"❌ Không tìm thấy role `{ping_role_id}` trong guild `{target_guild.name}`."
 
         # Lưu vào JSON
         data = _load()
@@ -501,16 +513,26 @@ class SupportHub(commands.Cog):
         # Đăng ký persistent view
         self.bot.add_view(view)
 
+        # Nội dung ping (nếu có role)
+        ping_content = ping_role.mention if ping_role else None
+
         try:
-            await target_channel.send(embed=embed, view=view)
+            await target_channel.send(
+                content=ping_content,
+                embed=embed,
+                view=view,
+                # allowed_mentions để mention role hoạt động dù có suppress hay không
+                allowed_mentions=discord.AllowedMentions(roles=True) if ping_role else discord.AllowedMentions.none(),
+            )
         except discord.Forbidden:
             return f"❌ Bot không có quyền gửi tin vào channel `{channel_id}`."
         except Exception as e:
             logger.error(f"[POSTPANEL ERROR] {e}", exc_info=True)
             return f"❌ Lỗi: `{e}`"
 
+        ping_info = f" (đã ping {ping_role.mention})" if ping_role else ""
         return (
-            f"✅ Đã gửi panel vào <#{channel_id}> (guild: `{target_guild.name}`). "
+            f"✅ Đã gửi panel vào <#{channel_id}> (guild: `{target_guild.name}`){ping_info}. "
             f"Reply channel: <#{reply_channel_id}>"
         )
 
@@ -539,7 +561,7 @@ class SupportHub(commands.Cog):
             await ctx.reply("❌ Bạn cần quyền **Administrator** để dùng lệnh này.")
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.reply(
-                "❌ Thiếu tham số. Cú pháp: `!postpanel <guild_id> <channel_id> <reply_channel_id>`"
+                "❌ Thiếu tham số. Cú pháp: `!postpanel <guild_id> <channel_id> <reply_channel_id> [ping_role_id]`"
             )
         else:
             logger.error(f"[POSTPANEL PREFIX ERROR] {error}", exc_info=True)
