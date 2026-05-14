@@ -22,8 +22,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def normalize_name(text: str) -> str:
     return text.strip().lower().replace(" ", "_")
 
-# ================= VIEW =================
-
 class ArmyInfoView(OptimizedView):
     """Optimized army info view with cached embeds"""
     
