@@ -4,292 +4,238 @@ import logging
 
 log = logging.getLogger('my_bot')
 
+
 class CustomHelpCommand(commands.HelpCommand):
     """
     Custom Help Command để trình bày các lệnh của bot một cách đẹp mắt bằng Embeds.
     """
 
-    # Màu sắc cho embed, có thể tùy chỉnh
-    EMBED_COLOR = discord.Color.blue() # Hoặc một màu khác bạn thích
+    EMBED_COLOR = discord.Color.blue()
 
-    async def send_bot_help(self, mapping):
-        """
-        Gửi tin nhắn trợ giúp chung (khi người dùng chỉ gõ !help).
-        """
-        # Thu thập tất cả cog data trước
-        cog_data = []
-        for cog in mapping.keys():
-            commands_in_cog = await self.filter_commands(mapping[cog], sort=True)
-            if commands_in_cog: # Chỉ hiển thị cog nếu có lệnh có thể truy cập
-                name = cog.qualified_name if cog else "Lệnh Chung"
-                
-                # Thu thập các lệnh tiền tố và slash command cho cog này
-                prefix_commands = []
-                slash_commands = []
-                for command in commands_in_cog:
-                    if isinstance(command, commands.Command): # Lệnh tiền tố
-                        prefix_commands.append(f"`{self.context.clean_prefix}{command.name}`")
-                    elif isinstance(command, discord.app_commands.Command): # Slash command
-                        slash_commands.append(f"`/{command.name}`")
+    # ──────────────────────────────────────────
+    # Helpers dùng chung
+    # ──────────────────────────────────────────
 
-                commands_str = ""
-                if prefix_commands:
-                    commands_str += f"**Lệnh Tiền Tố:** {', '.join(prefix_commands)}\n"
-                if slash_commands:
-                    commands_str += f"**Slash Commands:** {', '.join(slash_commands)}\n"
-                
-                if commands_str:
-                    cog_data.append((name, commands_str))
+    def _base_embed(self, title: str, description: str = "") -> discord.Embed:
+        """Tạo embed cơ bản với thumbnail và footer."""
+        bot = self.context.bot
+        author = self.context.author
 
-        # Nếu có quá nhiều cog, chia thành nhiều embed
-        if len(cog_data) <= 25:
-            # Gửi trong một embed
-            embed = discord.Embed(
-                title="📚 Danh Sách Lệnh Của Bot",
-                description="Sử dụng `!help <lệnh>` để xem chi tiết về một lệnh cụ thể.\n"
-                            "Ví dụ: `!help addpoint`\n\n",
-                color=self.EMBED_COLOR
-            )
-            embed.set_thumbnail(url=self.context.bot.user.avatar.url if self.context.bot.user.avatar else None)
-            embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                             icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
-
-            for name, commands_str in cog_data:
-                embed.add_field(name=name, value=commands_str, inline=False)
-
-            await self.get_destination().send(embed=embed)
-        else:
-            # Chia thành nhiều embed
-            await self._send_paginated_help(cog_data)
-
-    async def _send_paginated_help(self, cog_data):
-        """
-        Gửi tin nhắn trợ giúp chung nhưng chia thành nhiều trang.
-        """
-        pages = []
-        current_page = []
-        for name, commands_str in cog_data:
-            if len(current_page) >= 25:
-                pages.append(current_page)
-                current_page = []
-            current_page.append((name, commands_str))
-        if current_page:
-            pages.append(current_page)
-
-        for i, page in enumerate(pages, start=1):
-            embed = discord.Embed(
-                title=f"📚 Danh Sách Lệnh Của Bot (Trang {i}/{len(pages)})",
-                description="Sử dụng `!help <lệnh>` để xem chi tiết về một lệnh cụ thể.\n"
-                            "Ví dụ: `!help addpoint`\n\n",
-                color=self.EMBED_COLOR
-            )
-            embed.set_thumbnail(url=self.context.bot.user.avatar.url if self.context.bot.user.avatar else None)
-            embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                             icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
-
-            for name, commands_str in page:
-                embed.add_field(name=name, value=commands_str, inline=False)
-
-            await self.get_destination().send(embed=embed)
-
-    async def send_cog_help(self, cog):
-        """
-        Gửi tin nhắn trợ giúp cho một cog cụ thể (nếu có).
-        (Hiện tại chúng ta không có lệnh `!help <cog_name>`, nên hàm này có thể không được gọi trực tiếp,
-        nhưng tốt nhất là vẫn định nghĩa).
-        """
-        commands_in_cog = await self.filter_commands(cog.get_commands(), sort=True)
-        if not commands_in_cog:
-            return # Không có lệnh nào để hiển thị trong cog này
-
-        # Giới hạn số lệnh hiển thị để tránh vượt quá 25 fields
-        if len(commands_in_cog) <= 25:
-            embed = discord.Embed(
-                title=f"📚 Lệnh trong {cog.qualified_name}",
-                description=cog.description or "Không có mô tả cho cog này.",
-                color=self.EMBED_COLOR
-            )
-            for command in commands_in_cog:
-                embed.add_field(name=f"`{self.context.clean_prefix}{command.name}`",
-                                value=command.help or "Không có mô tả.",
-                                inline=False)
-            embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                             icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
-            await self.get_destination().send(embed=embed)
-        else:
-            # Chia thành nhiều trang nếu quá nhiều lệnh
-            await self._send_paginated_cog_help(cog, commands_in_cog)
-
-    async def _send_paginated_cog_help(self, cog, commands_in_cog):
-        """
-        Gửi tin nhắn trợ giúp cho một cog cụ thể nhưng chia thành nhiều trang.
-        """
-        pages = []
-        current_page = []
-        for command in commands_in_cog:
-            if len(current_page) >= 25:
-                pages.append(current_page)
-                current_page = []
-            current_page.append(command)
-        if current_page:
-            pages.append(current_page)
-
-        for i, page in enumerate(pages, start=1):
-            embed = discord.Embed(
-                title=f"📚 Lệnh trong {cog.qualified_name} (Trang {i}/{len(pages)})",
-                description=cog.description or "Không có mô tả cho cog này.",
-                color=self.EMBED_COLOR
-            )
-            for command in page:
-                embed.add_field(name=f"`{self.context.clean_prefix}{command.name}`",
-                                value=command.help or "Không có mô tả.",
-                                inline=False)
-            embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                             icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
-            await self.get_destination().send(embed=embed)
-
-    async def send_command_help(self, command):
-        """
-        Gửi tin nhắn trợ giúp cho một lệnh cụ thể (khi người dùng gõ !help <tên_lệnh>).
-        """
-        embed = discord.Embed(
-            title=f"📖 Trợ Giúp Lệnh: `{command.name}`",
-            description=command.help or "Không có mô tả chi tiết cho lệnh này.",
-            color=self.EMBED_COLOR
+        embed = discord.Embed(title=title, description=description, color=self.EMBED_COLOR)
+        embed.set_thumbnail(url=bot.user.avatar.url if bot.user.avatar else None)
+        embed.set_footer(
+            text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {author.name}",
+            icon_url=author.avatar.url if author.avatar else None,
         )
-        embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                         icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
+        return embed
 
-        # Kiểm tra nếu là lệnh tiền tố
-        if isinstance(command, commands.Command):
-            usage = f"`{self.context.clean_prefix}{command.name} {command.signature}`"
-            embed.add_field(name="Cách Dùng (Prefix):", value=usage, inline=False)
-            
-            # Thêm ví dụ nếu có (cần parse từ command.help)
-            examples = self._extract_examples_from_help(command.help)
-            if examples:
-                embed.add_field(name="Ví Dụ (Prefix):", value="\n".join(f"`{ex}`" for ex in examples), inline=False)
-            
-            embed.add_field(name="Aliases:", value=f"`{', '.join(command.aliases)}`" if command.aliases else "Không có", inline=False)
-            
-            # Kiểm tra xem có slash command tương ứng không
-            slash_command_exists = False
-            for app_cmd in self.context.bot.tree.get_commands():
-                if app_cmd.name == command.name:
-                    slash_command_exists = True
-                    break
-            if slash_command_exists:
-                embed.add_field(name="Slash Command Tương Ứng:", value=f"Có: `/{command.name}`", inline=False)
-            else:
-                embed.add_field(name="Slash Command Tương Ứng:", value="Không", inline=False)
-
-        # Kiểm tra nếu là slash command (discord.app_commands.Command)
-        elif isinstance(command, discord.app_commands.Command):
-            usage_options = []
-            for param in command.parameters:
-                required_str = ""
-                if param.required:
-                    required_str = " (bắt buộc)"
-                elif param.default is not discord.app_commands.MISSING:
-                    required_str = f" (mặc định: {param.default})"
-                
-                usage_options.append(f"`<{param.name}: {param.description or 'Không mô tả'}{required_str}>`")
-            
-            usage = f"`/{command.name} {' '.join(usage_options)}`"
-            embed.add_field(name="Cách Dùng (Slash):", value=usage, inline=False)
-
-            # Slash commands không có aliases hay mô tả ví dụ trong .help string theo cách prefix command
-            # Bạn có thể tự thêm một trường 'examples' vào Slash command nếu muốn
-        
-        await self.get_destination().send(embed=embed)
-
-
-    async def send_group_help(self, group):
+    async def _send_fields_paginated(
+        self,
+        fields: list[tuple[str, str]],
+        base_title: str,
+        description: str = "",
+    ) -> None:
         """
-        Gửi tin nhắn trợ giúp cho một nhóm lệnh (chưa có trong bot hiện tại).
+        Gửi danh sách fields dưới dạng embed, tự động chia trang nếu > 25 fields.
+        base_title: tiêu đề không có phần "(Trang x/y)".
         """
-        commands_in_group = group.commands
-        if not commands_in_group:
+        chunk_size = 25
+        pages = [fields[i : i + chunk_size] for i in range(0, len(fields), chunk_size)]
+        total = len(pages)
+
+        for i, page in enumerate(pages, 1):
+            title = base_title if total == 1 else f"{base_title} (Trang {i}/{total})"
+            embed = self._base_embed(title, description)
+            for name, value in page:
+                embed.add_field(name=name, value=value, inline=False)
+            await self.get_destination().send(embed=embed)
+
+    # ──────────────────────────────────────────
+    # send_bot_help
+    # ──────────────────────────────────────────
+
+    async def send_bot_help(self, mapping) -> None:
+        """Gửi danh sách tất cả lệnh (khi người dùng gõ !help)."""
+        prefix = self.context.clean_prefix
+        description = (
+            f"Sử dụng `{prefix}help <lệnh>` để xem chi tiết về một lệnh cụ thể.\n"
+            f"Ví dụ: `{prefix}help addpoint`\n\n"
+        )
+
+        fields: list[tuple[str, str]] = []
+        for cog, cmds in mapping.items():
+            visible = await self.filter_commands(cmds, sort=True)
+            if not visible:
+                continue
+
+            cog_name = cog.qualified_name if cog else "Lệnh Chung"
+            prefix_cmds = [
+                f"`{prefix}{cmd.name}`"
+                for cmd in visible
+                if isinstance(cmd, commands.Command)
+            ]
+            slash_cmds = [
+                f"`/{cmd.name}`"
+                for cmd in visible
+                if isinstance(cmd, discord.app_commands.Command)
+            ]
+
+            parts = []
+            if prefix_cmds:
+                parts.append(f"**Lệnh Tiền Tố:** {', '.join(prefix_cmds)}")
+            if slash_cmds:
+                parts.append(f"**Slash Commands:** {', '.join(slash_cmds)}")
+
+            if parts:
+                fields.append((cog_name, "\n".join(parts)))
+
+        await self._send_fields_paginated(fields, "📚 Danh Sách Lệnh Của Bot", description)
+
+    # ──────────────────────────────────────────
+    # send_cog_help
+    # ──────────────────────────────────────────
+
+    async def send_cog_help(self, cog) -> None:
+        """Gửi danh sách lệnh trong một cog cụ thể."""
+        visible = await self.filter_commands(cog.get_commands(), sort=True)
+        if not visible:
             return
 
-        # Giới hạn số lệnh hiển thị để tránh vượt quá 25 fields
-        if len(commands_in_group) <= 25:
-            embed = discord.Embed(
-                title=f"📚 Trợ Giúp Nhóm Lệnh: `{group.name}`",
-                description=group.help or "Không có mô tả cho nhóm lệnh này.",
-                color=self.EMBED_COLOR
-            )
-            for command in commands_in_group:
-                embed.add_field(name=f"`{self.context.clean_prefix}{command.qualified_name}`",
-                                value=command.short_doc or "Không có mô tả.",
-                                inline=False)
-            embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                             icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
-            await self.get_destination().send(embed=embed)
-        else:
-            # Chia thành nhiều trang nếu quá nhiều lệnh
-            await self._send_paginated_group_help(group, commands_in_group)
+        prefix = self.context.clean_prefix
+        fields = [
+            (f"`{prefix}{cmd.name}`", cmd.help or "Không có mô tả.")
+            for cmd in visible
+        ]
+        await self._send_fields_paginated(
+            fields,
+            f"📚 Lệnh trong {cog.qualified_name}",
+            cog.description or "Không có mô tả cho cog này.",
+        )
 
-    async def _send_paginated_group_help(self, group, commands_in_group):
-        """
-        Gửi tin nhắn trợ giúp cho một nhóm lệnh nhưng chia thành nhiều trang.
-        """
-        pages = []
-        current_page = []
-        for command in commands_in_group:
-            if len(current_page) >= 25:
-                pages.append(current_page)
-                current_page = []
-            current_page.append(command)
-        if current_page:
-            pages.append(current_page)
+    # ──────────────────────────────────────────
+    # send_command_help
+    # ──────────────────────────────────────────
 
-        for i, page in enumerate(pages, start=1):
-            embed = discord.Embed(
-                title=f"📚 Trợ Giúp Nhóm Lệnh: `{group.name}` (Trang {i}/{len(pages)})",
-                description=group.help or "Không có mô tả cho nhóm lệnh này.",
-                color=self.EMBED_COLOR
+    async def send_command_help(self, command) -> None:
+        """Gửi chi tiết về một lệnh cụ thể (khi người dùng gõ !help <tên_lệnh>)."""
+        embed = self._base_embed(
+            f"📖 Trợ Giúp Lệnh: `{command.name}`",
+            command.help or "Không có mô tả chi tiết cho lệnh này.",
+        )
+
+        if isinstance(command, commands.Command):
+            prefix = self.context.clean_prefix
+            embed.add_field(
+                name="Cách Dùng (Prefix):",
+                value=f"`{prefix}{command.name} {command.signature}`",
+                inline=False,
             )
-            for command in page:
-                embed.add_field(name=f"`{self.context.clean_prefix}{command.qualified_name}`",
-                                value=command.short_doc or "Không có mô tả.",
-                                inline=False)
-            embed.set_footer(text=f"Prefix: {self.context.clean_prefix} | Yêu cầu bởi: {self.context.author.name}", 
-                             icon_url=self.context.author.avatar.url if self.context.author.avatar else None)
-            await self.get_destination().send(embed=embed)
-    
+
+            examples = self._extract_examples_from_help(command.help)
+            if examples:
+                embed.add_field(
+                    name="Ví Dụ (Prefix):",
+                    value="\n".join(f"`{ex}`" for ex in examples),
+                    inline=False,
+                )
+
+            embed.add_field(
+                name="Aliases:",
+                value=f"`{', '.join(command.aliases)}`" if command.aliases else "Không có",
+                inline=False,
+            )
+
+            # Dùng set để tra cứu O(1) thay vì vòng lặp O(n)
+            slash_names = {cmd.name for cmd in self.context.bot.tree.get_commands()}
+            slash_info = f"Có: `/{command.name}`" if command.name in slash_names else "Không"
+            embed.add_field(name="Slash Command Tương Ứng:", value=slash_info, inline=False)
+
+        elif isinstance(command, discord.app_commands.Command):
+            options = []
+            for param in command.parameters:
+                if param.required:
+                    suffix = " (bắt buộc)"
+                elif param.default is not discord.app_commands.MISSING:
+                    suffix = f" (mặc định: {param.default})"
+                else:
+                    suffix = ""
+                options.append(f"`<{param.name}: {param.description or 'Không mô tả'}{suffix}>`")
+
+            embed.add_field(
+                name="Cách Dùng (Slash):",
+                value=f"`/{command.name} {' '.join(options)}`",
+                inline=False,
+            )
+
+        await self.get_destination().send(embed=embed)
+
+    # ──────────────────────────────────────────
+    # send_group_help
+    # ──────────────────────────────────────────
+
+    async def send_group_help(self, group) -> None:
+        """Gửi danh sách các lệnh trong một nhóm lệnh."""
+        # filter_commands để ẩn các lệnh không có quyền truy cập
+        visible = await self.filter_commands(group.commands, sort=True)
+        if not visible:
+            return
+
+        prefix = self.context.clean_prefix
+        fields = [
+            (f"`{prefix}{cmd.qualified_name}`", cmd.short_doc or "Không có mô tả.")
+            for cmd in visible
+        ]
+        await self._send_fields_paginated(
+            fields,
+            f"📚 Trợ Giúp Nhóm Lệnh: `{group.name}`",
+            group.help or "Không có mô tả cho nhóm lệnh này.",
+        )
+
+    # ──────────────────────────────────────────
+    # send_error_message
+    # ──────────────────────────────────────────
+
+    async def send_error_message(self, error: str) -> None:
+        """Gửi thông báo lỗi khi không tìm thấy lệnh."""
+        embed = discord.Embed(
+            title="❌ Không Tìm Thấy Lệnh",
+            description=error,
+            color=discord.Color.red(),
+        )
+        embed.set_footer(
+            text=f"Thử `{self.context.clean_prefix}help` để xem danh sách lệnh."
+        )
+        await self.get_destination().send(embed=embed)
+
+    # ──────────────────────────────────────────
+    # Utility
+    # ──────────────────────────────────────────
+
     def _extract_examples_from_help(self, help_string: str) -> list[str]:
         """
         Trích xuất các ví dụ từ chuỗi help của lệnh.
-        Giả định các ví dụ nằm sau "Ví dụ:" và mỗi ví dụ nằm trên một dòng mới.
+        Giả định các ví dụ nằm sau dòng "Ví dụ:" và bắt đầu bằng ! hoặc /.
         """
         if not help_string:
             return []
-        
-        lines = help_string.split('\n')
-        examples_found = False
-        examples = []
-        for line in lines:
-            stripped_line = line.strip()
-            if stripped_line.lower().startswith("ví dụ:"):
-                examples_found = True
+
+        examples: list[str] = []
+        in_examples = False
+
+        for line in help_string.split("\n"):
+            stripped = line.strip()
+            if stripped.lower().startswith("ví dụ:"):
+                in_examples = True
                 continue
-            if examples_found:
-                if stripped_line:
-                    # Loại bỏ "Cách dùng:" hoặc bất kỳ dòng không phải ví dụ nào sau "Ví dụ:"
-                    if stripped_line.lower().startswith("cách dùng:"):
-                        break
-                    # Ví dụ: !addpoint bloxfrui,abinll,cgg BT 100
-                    # Chúng ta chỉ muốn "bloxfrui,abinll,cgg BT 100" hoặc toàn bộ lệnh nếu cần
-                    # Để đơn giản, cứ lấy toàn bộ dòng có ! hoặc /
-                    if stripped_line.startswith("!") or stripped_line.startswith("/"):
-                        examples.append(stripped_line)
-                else: # Dòng trống, kết thúc phần ví dụ
+            if in_examples:
+                if not stripped or stripped.lower().startswith("cách dùng:"):
                     break
+                if stripped.startswith("!") or stripped.startswith("/"):
+                    examples.append(stripped)
+
         return examples
 
 
 async def setup(bot):
-    # Thay thế lệnh help mặc định của bot bằng CustomHelpCommand
     bot.help_command = CustomHelpCommand()
     log.info("CustomHelpCommand đã được thiết lập.")
