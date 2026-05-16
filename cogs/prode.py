@@ -10,11 +10,9 @@ import rblxopencloud
 
 WHITELIST_PATH = Path("config/whitelist.json")
 
-# Thay bằng ID Group Roblox bạn muốn quản lý
 ARMY_GROUP_ID = 11329100  
 DIVISION_GROUP_ID = 12750636
-# Open Cloud API key có quyền đổi rank
-OPEN_CLOUD_API_KEY = "d1q1acxgaUeTF34Yw44n5PKT7FeQzM8WalOc/S/OOfl97P3VZXlKaGJHY2lPaUpTVXpJMU5pSXNJbXRwWkNJNkluTnBaeTB5TURJeExUQTNMVEV6VkRFNE9qVXhPalE1V2lJc0luUjVjQ0k2SWtwWFZDSjkuZXlKaGRXUWlPaUpTYjJKc2IzaEpiblJsY201aGJDSXNJbWx6Y3lJNklrTnNiM1ZrUVhWMGFHVnVkR2xqWVhScGIyNVRaWEoyYVdObElpd2lZbUZ6WlVGd2FVdGxlU0k2SW1ReGNURmhZM2huWVZWbFZFWXpORmwzTkRSdU5WQkxWRGRHWlZGNlRUaFhZV3hQWXk5VEwwOVBabXc1TjFBelZpSXNJbTkzYm1WeVNXUWlPaUl6TlRFek1EQTBOalk0SWl3aVpYaHdJam94TnpZM056RTBNamMwTENKcFlYUWlPakUzTmpjM01UQTJOelFzSW01aVppSTZNVGMyTnpjeE1EWTNOSDAuRmxDOVdLbUxUbFRtZkxJWlNrWndCSTEtUzdSTmwwSmJGNXVKMFdTZFpfa2thN2lrM21XQlExYjdnVW83dm5Qb3hfdGpGQ0V1dXlETlF3dmk4Xy1GVHFsaGY5V0ItMUlURnd2enNPeGh2UGlZSGNXZmp5TzZFbUEzX1NUWjRYS1pzSlN0dTFUMFJBbnZwUll6WFk2NUJUQ01lNWg1bUV0MFJmVFFiUzlHTHFvN2NjRTBCNzBweU1NNHNWX3JGNGRRT3dWNUVwdVh6Y1l1YzZtd2Y5Y0hTUGNkMGVMU3NzZ3ZucnBUTENlZWNoV205VjV3bHZqVjJHWDF4RmF1dGNvQ0s1TmluclV3VkQ1U0FrTjBSQVpfLXZEeFRpS0F3ajNDeWxiNHZMRlN1amJVbGZpZ19nWW1rVlplbUJLWlZZR2lrSG12OHlmMElUZElkbkdRQW1NcW5R"
+OPEN_CLOUD_API_KEY = "d1q1acxgaUeTF34Yw44n5PKT7FeQzM8WalOc/S/OOfl97P3VZXlKaGJHY2lPaUpTVXpJMU5pSXNJbXRwWkNJNkluTnBaeTB5TURJeExUQTNWVEU0T2pVeE9qUTVXaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpoZFdRaU9pSlNiMkpzYjNoSmJuUmxjbTVoYkNJc0ltbHpjeUk2SWtOc2IzVmtRWFYwYUdWdWRHbGpZWFJwYjI1VFpYSjJhV05sSWl3aVltRnpaVUZ3YVV0bGVTSTZJbVF4Y1RGaFkzaG5ZVlZsVkVZek5GbDNORFJ1TlZCTFZEZEdaVkY2VFRoWFlXeE9ZeTlUTDBOUFptdzVOMUF6VmlJc0ltOTNibVZ5U1dRaU9pSXpOVEV6TURBMk5qZzRJaXdpWlhod0lqb3hOelkzTnpFME1qYzBMQ0pwWVhRaU9qRTNOamMzTVRBMk56UXNJbTVpWmlJNk1UYzJOamN4TURZek5INC5GbEM5V0ttTFRsVG1mTElaU2taV0JJMS1TN1JObDBKYkY1dUowV1NkWl9ra2E3aWszbVdCUTFiN2dVbzd2blBveF90akZDRXV1eUROUXd2aThfLUZUcWxoZjlXQi0xSVRGd3Z6c094aHZQaVlIY1dmanlPNkVtQTNfU1RaNFhLWnNKU3R1MVQwUkFudnBSWXpYWTY1QlRDTWU1aDVtRXQwUmZUUWJTOUdMcW83Y2NFMELcWdweU1NNHNWX3JGNGRRT3dWNUVwdVh6Y1l1YzZtd2Y5Y0hTUGNkMGVMU3NzZ3ZucnBUTENlZWNoV205VjV3bHZqVjJHWDF4RmF1dGNvQ0s1TmluclV3VkQ1U0FrTjBSQVpfLXZEeFRpS0F3ajNDeWxiNHZMRlN1amJVbGZpZ19nWW1rVlplbUJLWlZZR2lrSG12OHlmMElUZElkbkdRQW1NcW5R"
 
 
 # ==========================
@@ -40,11 +38,9 @@ def has_whitelist_permission(command_name: str):
         if not entry:
             return False
 
-        # user whitelist
         if ctx.author.id in entry.get("users", []):
             return True
 
-        # role whitelist
         user_roles = {r.id for r in ctx.author.roles}
         allowed_roles = set(entry.get("roles", []))
 
@@ -143,7 +139,7 @@ class Prode(commands.Cog):
     # ==========================
 
     @commands.command(name="demote")
-    @has_whitelist_permission("promote")  # dùng chung whitelist với promote
+    @has_whitelist_permission("promote")
     async def demote(self, ctx: commands.Context, username: str):
         async with ctx.typing():
             user_id = await self.fetch_roblox_user_id(username)
@@ -155,7 +151,6 @@ class Prode(commands.Cog):
                 return await ctx.send(f"❌ `{username}` không ở trong group.")
 
             current_role = member.fetch_role()
-
             roles = sorted(self.group.list_roles(), key=lambda r: r.rank)
 
             prev_role = None
@@ -174,12 +169,14 @@ class Prode(commands.Cog):
                 f"**từ {current_role.name} → {prev_role.name}**"
             )
 
-
     @demote.error
     async def demote_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure):
             await ctx.send("❌ Bạn không có quyền dùng lệnh này.")
 
+    # ==========================
+    # COMMAND: !promotediv
+    # ==========================
 
     @commands.command(name="promotediv")
     @has_whitelist_permission("promote")
@@ -203,21 +200,21 @@ class Prode(commands.Cog):
             if not next_role:
                 return await ctx.send(f"ℹ️ `{username}` đã ở Division rank cao nhất.")
 
-            self.division_group.update_member(
-                user_id,
-                role_id=next_role.id
-            )
+            self.division_group.update_member(user_id, role_id=next_role.id)
 
             await ctx.send(
-                f" `{username}` được thăng cấp đơn vị "
+                f"✅ `{username}` được thăng cấp đơn vị "
                 f"**từ {current_role.name} → {next_role.name}**"
             )
-
 
     @promotediv.error
     async def promotediv_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure):
             await ctx.send("❌ Bạn không có quyền dùng lệnh này.")
+
+    # ==========================
+    # COMMAND: !demotediv
+    # ==========================
 
     @commands.command(name="demotediv")
     @has_whitelist_permission("promote")
@@ -241,23 +238,60 @@ class Prode(commands.Cog):
             if not prev_role:
                 return await ctx.send(f"ℹ️ `{username}` đã ở Division rank thấp nhất.")
 
-            self.division_group.update_member(
-                user_id,
-                role_id=prev_role.id
-            )
+            self.division_group.update_member(user_id, role_id=prev_role.id)
 
             await ctx.send(
-                f"`{username}` bị hạ cấp đơn vị "
+                f"⬇️ `{username}` bị hạ cấp đơn vị "
                 f"**từ {current_role.name} → {prev_role.name}**"
             )
-
 
     @demotediv.error
     async def demotediv_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure):
             await ctx.send("❌ Bạn không có quyền dùng lệnh này.")
 
+    # ==========================
+    # COMMAND: !acpreq
+    # ==========================
 
+    @commands.command(name="acpreq")
+    @has_whitelist_permission("acpreq")
+    async def acpreq(self, ctx: commands.Context, username: str):
+        async with ctx.typing():
+            # 1. Lấy Roblox user ID từ username
+            user_id = await self.fetch_roblox_user_id(username)
+            if not user_id:
+                return await ctx.send(f"❌ Không tìm thấy Roblox user `{username}`.")
+
+            # 2. Kiểm tra xem họ đã ở trong Division chưa
+            existing_member = self.division_group.fetch_member(user_id)
+            if existing_member:
+                return await ctx.send(f"ℹ️ `{username}` đã là thành viên của Division rồi.")
+
+            # 3. Tìm join request của user trong danh sách pending
+            target_request = None
+            for req in self.division_group.list_join_requests():
+                if req.user_id == user_id:
+                    target_request = req
+                    break
+
+            if not target_request:
+                return await ctx.send(
+                    f"❌ Không tìm thấy join request của `{username}` trong Division.\n"
+                    f"Họ có thể chưa gửi request, hoặc request đã bị xử lý rồi."
+                )
+
+            # 4. Accept request
+            self.division_group.accept_join_request(user_id)
+
+            await ctx.send(
+                f"✅ Đã accept join request của `{username}` vào **Division**!"
+            )
+
+    @acpreq.error
+    async def acpreq_error(self, ctx, error):
+        if isinstance(error, commands.CheckFailure):
+            await ctx.send("❌ Bạn không có quyền dùng lệnh này.")
 
     # ==========================
     # WHITELIST PREFIX COMMANDS
