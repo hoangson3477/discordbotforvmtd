@@ -14,7 +14,7 @@ import time
 
 from config import SupabaseConfig, GoogleSheetsConfig, logger
 from sheets_optimization import OptimizedSheetsClient
-from addpoint_optimization import OptimizedAddPointCommand
+from addpoint import AddPointCommand
 
 log = logging.getLogger(__name__)
 
@@ -519,18 +519,9 @@ class GoogleSheets(commands.Cog):
 
     @commands.command(name="addpoint")
     async def add_point_command(self, ctx, raw_roblox_usernames, event_type, points):
-        """Enhanced addpoint command with auto-search and Vietnamese responses"""
+        """Addpoint với auto-search, validation và embed chi tiết."""
         log.info(f"[AddPoint] Processing command from {ctx.author.name}: {raw_roblox_usernames} {event_type} {points}")
-        
-        # Use enhanced processor
-        if hasattr(self, 'enhanced_addpoint'):
-            processor = self.enhanced_addpoint
-        else:
-            from addpoint_enhanced import EnhancedAddPointCommand
-            processor = EnhancedAddPointCommand(self)
-            self.enhanced_addpoint = processor
-        
-        await processor.execute(ctx, raw_roblox_usernames, event_type, points)
+        await AddPointCommand(self).execute(ctx, raw_roblox_usernames, event_type, points)
 
     # --- Slash Command /addpoint ---
     @discord.app_commands.command(name="addpoint", description="Thêm điểm và cập nhật số lần tham gia cho người dùng Roblox (hỗ trợ auto-search).")
@@ -540,18 +531,9 @@ class GoogleSheets(commands.Cog):
         points="Số điểm muốn thêm (tối đa 25)"
     )
     async def slash_add_point_command(self, interaction: discord.Interaction, roblox_usernames: str, event_type: str, points: float):
-        """Enhanced slash addpoint command"""
+        """Addpoint slash với auto-search, validation và embed chi tiết."""
         log.info(f"[AddPoint] Processing slash from {interaction.user.name}: {roblox_usernames} {event_type} {points}")
-        
-        # Use enhanced processor
-        if hasattr(self, 'enhanced_addpoint'):
-            processor = self.enhanced_addpoint
-        else:
-            from addpoint_enhanced import EnhancedAddPointCommand
-            processor = EnhancedAddPointCommand(self)
-            self.enhanced_addpoint = processor
-        
-        await processor.execute(interaction, roblox_usernames, event_type, points)
+        await AddPointCommand(self).execute(interaction, roblox_usernames, event_type, points)
 
     # --- Lệnh Prefix !endquota ---
     @commands.command(name='endquota')

@@ -1,57 +1,116 @@
 """
 support_hub.py — Discord.py Cog
 Multi-guild support hub: panel, modals, forwarding, reply flow.
+Storage: Supabase (persistent trên Railway).
 Persistent views survive bot restart.
+
+Supabase SQL cần chạy trước (1 lần duy nhất trong SQL Editor):
+────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS hub_guilds (
+    guild_id         BIGINT PRIMARY KEY,
+    panel_channel_id BIGINT NOT NULL,
+    reply_channel_id BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hub_submissions (
+    sub_id           TEXT PRIMARY KEY,
+    type             TEXT NOT NULL,
+    guild_id         BIGINT NOT NULL,
+    guild_name       TEXT NOT NULL,
+    user_id          BIGINT NOT NULL,
+    username         TEXT NOT NULL,
+    reply_channel_id BIGINT NOT NULL,
+    content          TEXT NOT NULL,
+    replied          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+────────────────────────────────────────────────────────────────
 """
 
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
 import os
 import uuid
 import logging
+import aiohttp
 
 # ─────────────────────────────────────────
 #  CONFIG — chỉnh 3 dòng này
 # ─────────────────────────────────────────
-HUB_GUILD_ID         = 1504540055153283092   # ID guild trung tâm
-HUB_SUPPORT_CHANNEL_ID = 1504540147293618267  # channel nhận ticket support
-HUB_MESSAGE_CHANNEL_ID = 1504540056000663585  # channel nhận message thường
+HUB_GUILD_ID            = 1504540055153283092
+HUB_SUPPORT_CHANNEL_ID  = 1504540147293618267
+HUB_MESSAGE_CHANNEL_ID  = 1504540056000663585
 # ─────────────────────────────────────────
-
-DATA_FILE = "support_hub_data.json"
 
 logger = logging.getLogger("support_hub")
 
 
 # ══════════════════════════════════════════
-#  JSON HELPERS
+#  SUPABASE CLIENT (REST API qua aiohttp)
 # ══════════════════════════════════════════
 
-def _load() -> dict:
-    """Đọc dữ liệu từ JSON, tự tạo file nếu chưa có."""
-    if not os.path.exists(DATA_FILE):
-        _save({"guilds": {}, "submissions": {}})
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+class SupabaseClient:
+    """
+    Wrapper nhẹ cho Supabase REST API.
+    Không cần thêm lib — dùng aiohttp có sẵn trong bot.
+    """
+
+    def __init__(self, url: str, key: str, session: aiohttp.ClientSession):
+        self.base = url.rstrip("/") + "/rest/v1"
+        self.headers = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
+        self.session = session
+
+    async def select(self, table: str, filters: dict = None) -> list[dict]:
+        """SELECT với optional eq filters."""
+        params = {}
+        if filters:
+            for k, v in filters.items():
+                params[k] = f"eq.{v}"
+        async with self.session.get(
+            f"{self.base}/{table}", headers=self.headers, params=params
+        ) as r:
+            r.raise_for_status()
+            return await r.json()
+
+    async def upsert(self, table: str, data: dict) -> list[dict]:
+        """INSERT hoặc UPDATE theo PK."""
+        headers = {
+            **self.headers,
+            "Prefer": "resolution=merge-duplicates,return=representation",
+        }
+        async with self.session.post(
+            f"{self.base}/{table}", headers=headers, json=data
+        ) as r:
+            r.raise_for_status()
+            return await r.json()
+
+    async def update(self, table: str, filters: dict, data: dict) -> list[dict]:
+        """PATCH với eq filters."""
+        params = {k: f"eq.{v}" for k, v in filters.items()}
+        async with self.session.patch(
+            f"{self.base}/{table}", headers=self.headers, params=params, json=data
+        ) as r:
+            r.raise_for_status()
+            return await r.json()
 
 
-def _save(data: dict) -> None:
-    """Ghi toàn bộ dữ liệu xuống JSON."""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+# ── Module-level client, khởi tạo trong cog_load ──
+_db: SupabaseClient | None = None
 
 
-def _get_submission(sub_id: str) -> dict | None:
-    return _load()["submissions"].get(sub_id)
+async def _get_submission(sub_id: str) -> dict | None:
+    rows = await _db.select("hub_submissions", {"sub_id": sub_id})
+    return rows[0] if rows else None
 
 
-def _mark_replied(sub_id: str) -> None:
-    data = _load()
-    if sub_id in data["submissions"]:
-        data["submissions"][sub_id]["replied"] = True
-        _save(data)
+async def _mark_replied(sub_id: str) -> None:
+    await _db.update("hub_submissions", {"sub_id": sub_id}, {"replied": True})
 
 
 # ══════════════════════════════════════════
@@ -119,7 +178,7 @@ class ReplyModal(discord.ui.Modal, title="Trả lời submission"):
         self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
-        sub = _get_submission(self.sub_id)
+        sub = await _get_submission(self.sub_id)
         if not sub:
             await interaction.response.send_message(
                 "❌ Không tìm thấy submission.", ephemeral=True
@@ -132,7 +191,6 @@ class ReplyModal(discord.ui.Modal, title="Trả lời submission"):
             )
             return
 
-        # Gửi reply về guild gốc
         try:
             reply_channel = self.bot.get_channel(sub["reply_channel_id"])
             if reply_channel is None:
@@ -156,13 +214,11 @@ class ReplyModal(discord.ui.Modal, title="Trả lời submission"):
                 embed=embed,
             )
 
-            _mark_replied(self.sub_id)
-
-            # Disable nút Reply trên hub embed
+            await _mark_replied(self.sub_id)
             await _disable_reply_button(interaction, self.sub_id)
 
             await interaction.response.send_message(
-                f"Đã gửi reply cho `{self.sub_id}`.", ephemeral=True
+                f"✅ Đã gửi reply cho `{self.sub_id}`.", ephemeral=True
             )
 
         except discord.Forbidden:
@@ -176,22 +232,79 @@ class ReplyModal(discord.ui.Modal, title="Trả lời submission"):
             )
 
 
+class HubSendModal(discord.ui.Modal, title="Gửi tin nhắn trực tiếp"):
+    """Modal cho lệnh hubsend — nhập nội dung."""
+    message_content = discord.ui.TextInput(
+        label="Nội dung tin nhắn",
+        style=discord.TextStyle.paragraph,
+        placeholder="Nhập nội dung muốn gửi...",
+        max_length=2000,
+    )
+
+    def __init__(self, bot: commands.Bot, target_guild_id: int, target_channel_id: int):
+        super().__init__()
+        self.bot = bot
+        self.target_guild_id = target_guild_id
+        self.target_channel_id = target_channel_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            target_channel = self.bot.get_channel(self.target_channel_id)
+            if target_channel is None:
+                target_channel = await self.bot.fetch_channel(self.target_channel_id)
+
+            target_guild = self.bot.get_guild(self.target_guild_id)
+            guild_name = target_guild.name if target_guild else str(self.target_guild_id)
+
+            embed = discord.Embed(
+                title="📢 Tin nhắn từ Hub",
+                description=self.message_content.value,
+                color=discord.Color.gold(),
+            )
+            embed.set_footer(
+                text=f"Gửi bởi {interaction.user} | Hub Admin",
+                icon_url=interaction.user.display_avatar.url,
+            )
+
+            await target_channel.send(embed=embed)
+            await interaction.response.send_message(
+                f"✅ Đã gửi đến <#{self.target_channel_id}> (guild: `{guild_name}`).",
+                ephemeral=True,
+            )
+            logger.info(
+                f"[HUBSEND] {interaction.user} → guild {self.target_guild_id} "
+                f"/ channel {self.target_channel_id}"
+            )
+
+        except discord.NotFound:
+            await interaction.response.send_message(
+                "❌ Không tìm thấy channel.", ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ Bot không có quyền gửi tin vào channel đó.", ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"[HUBSEND MODAL ERROR] {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Lỗi: `{e}`", ephemeral=True
+            )
+
+
 # ══════════════════════════════════════════
 #  PERSISTENT VIEWS
 # ══════════════════════════════════════════
 
 class PanelView(discord.ui.View):
     """
-    View cho embed panel tại các guild thành viên.
-    custom_id cố định → survive restart.
-    reply_channel_id được encode vào custom_id.
+    Panel tại guild thành viên.
+    reply_channel_id encode vào custom_id → survive restart không cần DB lookup.
     """
 
     def __init__(self, reply_channel_id: int):
-        super().__init__(timeout=None)  # persistent
+        super().__init__(timeout=None)
         self.reply_channel_id = reply_channel_id
 
-        # Tạo button Support
         support_btn = discord.ui.Button(
             label="🎫 Support",
             style=discord.ButtonStyle.primary,
@@ -200,7 +313,6 @@ class PanelView(discord.ui.View):
         support_btn.callback = self._support_callback
         self.add_item(support_btn)
 
-        # Tạo button Message
         message_btn = discord.ui.Button(
             label="✉️ Message",
             style=discord.ButtonStyle.secondary,
@@ -221,10 +333,7 @@ class PanelView(discord.ui.View):
 
 
 class HubReplyView(discord.ui.View):
-    """
-    View trên hub embed — có nút Reply.
-    custom_id encode submission_id → survive restart.
-    """
+    """Hub embed reply view. sub_id encode vào custom_id → survive restart."""
 
     def __init__(self, sub_id: str, bot: commands.Bot, disabled: bool = False):
         super().__init__(timeout=None)
@@ -241,14 +350,13 @@ class HubReplyView(discord.ui.View):
         self.add_item(reply_btn)
 
     async def _reply_callback(self, interaction: discord.Interaction):
-        # Chỉ admin mới được reply
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
                 "❌ Chỉ Administrator mới có thể trả lời.", ephemeral=True
             )
             return
 
-        sub = _get_submission(self.sub_id)
+        sub = await _get_submission(self.sub_id)
         if not sub:
             await interaction.response.send_message(
                 "❌ Submission không tồn tại.", ephemeral=True
@@ -276,11 +384,11 @@ async def _handle_submission(
     content: str,
     reply_channel_id: int,
 ):
-    """Tạo submission, lưu JSON, forward lên hub."""
+    """Tạo submission, lưu Supabase, forward lên hub."""
     sub_id = str(uuid.uuid4())[:8].upper()
 
-    data = _load()
-    data["submissions"][sub_id] = {
+    await _db.upsert("hub_submissions", {
+        "sub_id": sub_id,
         "type": sub_type,
         "guild_id": interaction.guild.id,
         "guild_name": interaction.guild.name,
@@ -289,12 +397,9 @@ async def _handle_submission(
         "reply_channel_id": reply_channel_id,
         "content": content,
         "replied": False,
-    }
-    _save(data)
+    })
 
     bot: commands.Bot = interaction.client
-
-    # Xác định hub channel
     hub_channel_id = (
         HUB_SUPPORT_CHANNEL_ID if sub_type == "support" else HUB_MESSAGE_CHANNEL_ID
     )
@@ -323,6 +428,7 @@ async def _handle_submission(
         embed.set_footer(text=f"Submission ID: {sub_id}")
 
         view = HubReplyView(sub_id=sub_id, bot=bot)
+        bot.add_view(view)
         await hub_channel.send(embed=embed, view=view)
 
         await interaction.response.send_message(
@@ -342,18 +448,13 @@ async def _handle_submission(
 
 
 async def _disable_reply_button(interaction: discord.Interaction, sub_id: str):
-    """
-    Edit message trên hub để disable nút Reply sau khi đã trả lời.
-    interaction ở đây là từ ReplyModal — message gốc không dễ lấy,
-    nên ta search trong hub channel.
-    """
+    """Tìm hub embed theo sub_id và disable nút Reply."""
     try:
         bot: commands.Bot = interaction.client
         hub_guild = bot.get_guild(HUB_GUILD_ID)
         if not hub_guild:
             return
 
-        # Tìm trong cả 2 hub channel
         for ch_id in (HUB_SUPPORT_CHANNEL_ID, HUB_MESSAGE_CHANNEL_ID):
             channel = hub_guild.get_channel(ch_id)
             if not channel:
@@ -364,11 +465,12 @@ async def _disable_reply_button(interaction: discord.Interaction, sub_id: str):
                     and msg.embeds
                     and sub_id in (msg.embeds[0].footer.text or "")
                 ):
-                    disabled_view = HubReplyView(sub_id=sub_id, bot=bot, disabled=True)
-                    await msg.edit(view=disabled_view)
+                    await msg.edit(
+                        view=HubReplyView(sub_id=sub_id, bot=bot, disabled=True)
+                    )
                     return
     except Exception as e:
-        logger.warning(f"[DISABLE BUTTON] Không thể disable button: {e}")
+        logger.warning(f"[DISABLE BUTTON] {e}")
 
 
 # ══════════════════════════════════════════
@@ -378,34 +480,53 @@ async def _disable_reply_button(interaction: discord.Interaction, sub_id: str):
 class SupportHub(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # Đảm bảo file JSON tồn tại ngay khi cog load
-        _load()
 
     async def cog_load(self):
-        """
-        Đăng ký lại tất cả persistent views từ JSON khi bot restart.
-        Gọi sau khi cog được add vào bot.
-        """
-        data = _load()
+        """Khởi tạo Supabase client và đăng ký persistent views từ DB."""
+        global _db
 
-        # 1) Panel views — mỗi guild có reply_channel_id riêng
-        registered_reply_channels: set[int] = set()
-        for guild_data in data["guilds"].values():
-            rch = guild_data.get("reply_channel_id")
-            if rch and rch not in registered_reply_channels:
-                self.bot.add_view(PanelView(reply_channel_id=rch))
-                registered_reply_channels.add(rch)
-
-        # 2) Hub reply views — mỗi submission chưa replied
-        for sub_id, sub in data["submissions"].items():
-            replied = sub.get("replied", False)
-            self.bot.add_view(
-                HubReplyView(sub_id=sub_id, bot=self.bot, disabled=replied)
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        if not supabase_url or not supabase_key:
+            raise EnvironmentError(
+                "Thiếu SUPABASE_URL hoặc SUPABASE_KEY trong .env"
             )
 
+        # Dùng lại aiohttp session của bot nếu có, fallback tạo mới
+        session = getattr(self.bot, "http_session", None) or aiohttp.ClientSession()
+        _db = SupabaseClient(supabase_url, supabase_key, session)
+
+        # 1) Panel views từ hub_guilds
+        registered: set[int] = set()
+        try:
+            guilds = await _db.select("hub_guilds")
+            for g in guilds:
+                rch = g["reply_channel_id"]
+                if rch not in registered:
+                    self.bot.add_view(PanelView(reply_channel_id=rch))
+                    registered.add(rch)
+        except Exception as e:
+            logger.error(f"[SUPPORT-HUB] Load hub_guilds thất bại: {e}", exc_info=True)
+
+        # 2) Hub reply views từ hub_submissions
+        sub_count = 0
+        try:
+            submissions = await _db.select("hub_submissions")
+            for sub in submissions:
+                self.bot.add_view(
+                    HubReplyView(
+                        sub_id=sub["sub_id"],
+                        bot=self.bot,
+                        disabled=sub.get("replied", False),
+                    )
+                )
+                sub_count += 1
+        except Exception as e:
+            logger.error(f"[SUPPORT-HUB] Load hub_submissions thất bại: {e}", exc_info=True)
+
         logger.info(
-            f"[SUPPORT-HUB] Registered {len(registered_reply_channels)} panel view(s), "
-            f"{len(data['submissions'])} hub reply view(s)."
+            f"[SUPPORT-HUB] Registered {len(registered)} panel view(s), "
+            f"{sub_count} hub reply view(s)."
         )
 
     # ──────────────────────────────────────
@@ -450,12 +571,11 @@ class SupportHub(commands.Cog):
         reply_channel_id: int,
         ping_role_id: int = None,
     ):
-        result = await self._do_postpanel(guild_id, channel_id, reply_channel_id, ping_role_id=ping_role_id)
+        result = await self._do_postpanel(
+            guild_id, channel_id, reply_channel_id, ping_role_id=ping_role_id
+        )
         await ctx.reply(result)
 
-    # ──────────────────────────────────────
-    #  Logic chung cho postpanel
-    # ──────────────────────────────────────
     async def _do_postpanel(
         self,
         guild_id: int,
@@ -463,7 +583,6 @@ class SupportHub(commands.Cog):
         reply_channel_id: int,
         ping_role_id: int = None,
     ) -> str:
-        # Verify bot có trong guild
         target_guild = self.bot.get_guild(guild_id)
         if not target_guild:
             return (
@@ -471,7 +590,6 @@ class SupportHub(commands.Cog):
                 "Hãy mời bot vào guild đó trước."
             )
 
-        # Verify channel tồn tại
         target_channel = target_guild.get_channel(channel_id)
         if not target_channel:
             try:
@@ -481,22 +599,23 @@ class SupportHub(commands.Cog):
             except discord.Forbidden:
                 return f"❌ Bot không có quyền truy cập channel `{channel_id}`."
 
-        # Verify role nếu có truyền vào
         ping_role = None
         if ping_role_id:
             ping_role = target_guild.get_role(ping_role_id)
             if not ping_role:
                 return f"❌ Không tìm thấy role `{ping_role_id}` trong guild `{target_guild.name}`."
 
-        # Lưu vào JSON
-        data = _load()
-        data["guilds"][str(guild_id)] = {
-            "panel_channel_id": channel_id,
-            "reply_channel_id": reply_channel_id,
-        }
-        _save(data)
+        # Lưu vào Supabase
+        try:
+            await _db.upsert("hub_guilds", {
+                "guild_id": guild_id,
+                "panel_channel_id": channel_id,
+                "reply_channel_id": reply_channel_id,
+            })
+        except Exception as e:
+            logger.error(f"[POSTPANEL DB ERROR] {e}", exc_info=True)
+            return f"❌ Lỗi lưu DB: `{e}`"
 
-        # Tạo panel embed + persistent view
         embed = discord.Embed(
             title="Support/Message Hub",
             description=(
@@ -509,20 +628,18 @@ class SupportHub(commands.Cog):
         embed.set_footer(text="Nhấn nút bên dưới để bắt đầu")
 
         view = PanelView(reply_channel_id=reply_channel_id)
-
-        # Đăng ký persistent view
         self.bot.add_view(view)
-
-        # Nội dung ping (nếu có role)
-        ping_content = ping_role.mention if ping_role else None
 
         try:
             await target_channel.send(
-                content=ping_content,
+                content=ping_role.mention if ping_role else None,
                 embed=embed,
                 view=view,
-                # allowed_mentions để mention role hoạt động dù có suppress hay không
-                allowed_mentions=discord.AllowedMentions(roles=True) if ping_role else discord.AllowedMentions.none(),
+                allowed_mentions=(
+                    discord.AllowedMentions(roles=True)
+                    if ping_role
+                    else discord.AllowedMentions.none()
+                ),
             )
         except discord.Forbidden:
             return f"❌ Bot không có quyền gửi tin vào channel `{channel_id}`."
@@ -537,34 +654,163 @@ class SupportHub(commands.Cog):
         )
 
     # ──────────────────────────────────────
+    #  /hubsend  (slash)
+    # ──────────────────────────────────────
+    @app_commands.command(
+        name="hubsend",
+        description="[Hub Admin] Gửi tin nhắn trực tiếp đến channel trong guild bất kỳ",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(
+        guild_id="ID của guild đích",
+        channel_id="ID của channel đích",
+    )
+    async def hubsend_slash(
+        self,
+        interaction: discord.Interaction,
+        guild_id: str,
+        channel_id: str,
+    ):
+        # Chỉ dùng được trong hub guild
+        if interaction.guild_id != HUB_GUILD_ID:
+            await interaction.response.send_message(
+                "❌ Lệnh này chỉ dùng được trong Hub Guild.", ephemeral=True
+            )
+            return
+
+        target_guild = self.bot.get_guild(int(guild_id))
+        if not target_guild:
+            await interaction.response.send_message(
+                f"❌ Bot không có trong guild `{guild_id}`.", ephemeral=True
+            )
+            return
+
+        # Verify channel trước khi mở modal
+        target_channel = target_guild.get_channel(int(channel_id))
+        if not target_channel:
+            try:
+                target_channel = await self.bot.fetch_channel(int(channel_id))
+            except discord.NotFound:
+                await interaction.response.send_message(
+                    f"❌ Không tìm thấy channel `{channel_id}`.", ephemeral=True
+                )
+                return
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    f"❌ Bot không có quyền truy cập channel `{channel_id}`.", ephemeral=True
+                )
+                return
+
+        await interaction.response.send_modal(
+            HubSendModal(
+                bot=self.bot,
+                target_guild_id=int(guild_id),
+                target_channel_id=int(channel_id),
+            )
+        )
+
+    # ──────────────────────────────────────
+    #  !hubsend  (prefix)
+    # ──────────────────────────────────────
+    @commands.command(name="hubsend")
+    @commands.has_permissions(administrator=True)
+    async def hubsend_prefix(
+        self,
+        ctx: commands.Context,
+        guild_id: int,
+        channel_id: int,
+        *,
+        message: str,
+    ):
+        """Cú pháp: !hubsend <guild_id> <channel_id> <nội dung>"""
+        if ctx.guild.id != HUB_GUILD_ID:
+            await ctx.reply("❌ Lệnh này chỉ dùng được trong Hub Guild.")
+            return
+
+        target_guild = self.bot.get_guild(guild_id)
+        if not target_guild:
+            await ctx.reply(f"❌ Bot không có trong guild `{guild_id}`.")
+            return
+
+        target_channel = target_guild.get_channel(channel_id)
+        if not target_channel:
+            try:
+                target_channel = await self.bot.fetch_channel(channel_id)
+            except discord.NotFound:
+                await ctx.reply(f"❌ Không tìm thấy channel `{channel_id}`.")
+                return
+            except discord.Forbidden:
+                await ctx.reply(f"❌ Bot không có quyền truy cập channel `{channel_id}`.")
+                return
+
+        try:
+            embed = discord.Embed(
+                title="📢 Tin nhắn từ Hub",
+                description=message,
+                color=discord.Color.gold(),
+            )
+            embed.set_footer(
+                text=f"Gửi bởi {ctx.author} | Hub Admin",
+                icon_url=ctx.author.display_avatar.url,
+            )
+            await target_channel.send(embed=embed)
+            await ctx.reply(
+                f"✅ Đã gửi đến <#{channel_id}> (guild: `{target_guild.name}`)."
+            )
+            logger.info(
+                f"[HUBSEND] {ctx.author} → guild {guild_id} / channel {channel_id}"
+            )
+        except discord.Forbidden:
+            await ctx.reply("❌ Bot không có quyền gửi tin vào channel đó.")
+        except Exception as e:
+            logger.error(f"[HUBSEND PREFIX ERROR] {e}", exc_info=True)
+            await ctx.reply(f"❌ Lỗi: `{e}`")
+
+    # ──────────────────────────────────────
     #  Error handlers
     # ──────────────────────────────────────
     @postpanel_slash.error
-    async def postpanel_slash_error(
-        self, interaction: discord.Interaction, error: app_commands.AppCommandError
-    ):
+    async def postpanel_slash_error(self, interaction, error):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message(
-                "❌ Bạn cần quyền **Administrator** để dùng lệnh này.", ephemeral=True
+                "❌ Bạn cần quyền **Administrator**.", ephemeral=True
             )
         else:
             logger.error(f"[POSTPANEL SLASH ERROR] {error}", exc_info=True)
-            await interaction.response.send_message(
-                f"❌ Lỗi: `{error}`", ephemeral=True
-            )
+            await interaction.response.send_message(f"❌ Lỗi: `{error}`", ephemeral=True)
 
     @postpanel_prefix.error
-    async def postpanel_prefix_error(
-        self, ctx: commands.Context, error: commands.CommandError
-    ):
+    async def postpanel_prefix_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("❌ Bạn cần quyền **Administrator** để dùng lệnh này.")
+            await ctx.reply("❌ Bạn cần quyền **Administrator**.")
         elif isinstance(error, commands.MissingRequiredArgument):
             await ctx.reply(
                 "❌ Thiếu tham số. Cú pháp: `!postpanel <guild_id> <channel_id> <reply_channel_id> [ping_role_id]`"
             )
         else:
             logger.error(f"[POSTPANEL PREFIX ERROR] {error}", exc_info=True)
+            await ctx.reply(f"❌ Lỗi: `{error}`")
+
+    @hubsend_slash.error
+    async def hubsend_slash_error(self, interaction, error):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(
+                "❌ Bạn cần quyền **Administrator**.", ephemeral=True
+            )
+        else:
+            logger.error(f"[HUBSEND SLASH ERROR] {error}", exc_info=True)
+            await interaction.response.send_message(f"❌ Lỗi: `{error}`", ephemeral=True)
+
+    @hubsend_prefix.error
+    async def hubsend_prefix_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("❌ Bạn cần quyền **Administrator**.")
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.reply(
+                "❌ Thiếu tham số. Cú pháp: `!hubsend <guild_id> <channel_id> <nội dung>`"
+            )
+        else:
+            logger.error(f"[HUBSEND PREFIX ERROR] {error}", exc_info=True)
             await ctx.reply(f"❌ Lỗi: `{error}`")
 
 

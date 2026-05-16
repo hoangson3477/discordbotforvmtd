@@ -22,9 +22,15 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 def normalize_name(text: str) -> str:
     return text.strip().lower().replace(" ", "_")
 
+
+# ─────────────────────────────────────────────────────────────────
+# FIX 1: ArmyInfoView — sửa get_achievement_embed dùng đúng
+#         self.cog.supabase thay vì gọi decorator lồng async sai cách,
+#         và giới hạn description để tránh vượt 4096 ký tự.
+# ─────────────────────────────────────────────────────────────────
 class ArmyInfoView(OptimizedView):
     """Optimized army info view with cached embeds"""
-    
+
     def __init__(self, cog, member):
         super().__init__(timeout=120)
         self.cog = cog
@@ -45,44 +51,76 @@ class ArmyInfoView(OptimizedView):
     async def get_info_embed(self):
         """Cache info embed"""
         if self.info_embed is None:
-            self.info_embed = create_user_embed(
-                self.member, 
-                title="Thông tin Quân nhân"
+            embed = discord.Embed(
+                title="Thông tin Quân nhân",
+                color=discord.Color.blue()
             )
-            # Add fields using builder (faster)
-            self.info_embed.add_field(name="Tên", value=self.cog.clean_name(self.member.display_name), inline=False)
-            self.info_embed.add_field(name="Quân hàm", value=self.cog.get_rank(self.member), inline=False)
-            self.info_embed.add_field(name="Chức vụ", value=self.cog.get_position(self.member), inline=False)
-            self.info_embed.set_footer(text=f"ID: {self.member.id}")
+            embed.set_thumbnail(url=self.member.display_avatar.url)
+            embed.add_field(
+                name="Tên",
+                value=self.cog.clean_name(self.member.display_name),
+                inline=False
+            )
+            embed.add_field(
+                name="Quân hàm",
+                value=self.cog.get_rank(self.member),
+                inline=False
+            )
+            embed.add_field(
+                name="Chức vụ",
+                value=self.cog.get_position(self.member),
+                inline=False
+            )
+            embed.set_footer(text=f"ID: {self.member.id}")
+            self.info_embed = embed
         return self.info_embed
 
     async def get_achievement_embed(self):
-        """Cache achievement embed"""
+        """Cache achievement embed — FIX: dùng self.cog.supabase trực tiếp,
+        không wrap bằng decorator lồng nhau sai cách.
+        FIX: giới hạn description để không vượt 4096 ký tự.
+        """
         if self.achievement_embed is None:
-            @safe_db_operation("get_user_achievements")
-            async def fetch_achievements():
-                return self.cog.supabase.table("user_achievements") \
+            try:
+                result = self.cog.supabase.table("user_achievements") \
                     .select("achievements(display_name)") \
-                    .eq("user_id", self.member.id) \
+                    .eq("user_id", str(self.member.id)) \
                     .execute()
-            
-            data = await fetch_achievements()
+                data = result.data or []
+            except Exception as e:
+                logger.error(f"[get_achievement_embed] Lỗi DB: {e}")
+                data = []
+
             names = []
-            
-            for row in data.data or []:
-                a = row["achievements"]
-                if a:
+            for row in data:
+                a = row.get("achievements")
+                if a and a.get("display_name"):
                     names.append(a["display_name"])
-            
+
             if not names:
                 description = "Không có thành tựu"
             else:
-                description = "\n".join(f"• {n}" for n in names)
-            
-            self.achievement_embed = EmbedBuilder(title="Thành tựu", color=discord.Color.gold()) \
-                .set_description(description) \
-                .set_footer(text=f"Tổng: {len(names)} thành tựu") \
+                # FIX: giới hạn để không vượt 4096 ký tự (Discord limit)
+                lines = [f"• {n}" for n in names]
+                description = "\n".join(lines)
+                if len(description) > 4000:
+                    # Cắt bớt và thêm thông báo
+                    truncated = []
+                    total_len = 0
+                    for line in lines:
+                        if total_len + len(line) + 1 > 3900:
+                            truncated.append(f"... và {len(names) - len(truncated)} thành tựu khác")
+                            break
+                        truncated.append(line)
+                        total_len += len(line) + 1
+                    description = "\n".join(truncated)
+
+            self.achievement_embed = (
+                EmbedBuilder(title=f"Thành tựu của {self.cog.clean_name(self.member.display_name)}", color=discord.Color.gold())
+                .set_description(description)
+                .set_footer(text=f"Tổng: {len(names)} thành tựu")
                 .build()
+            )
         return self.achievement_embed
 
     @discord.ui.button(label="Thông tin cơ bản", style=discord.ButtonStyle.secondary, custom_id="info")
@@ -96,51 +134,77 @@ class ArmyInfoView(OptimizedView):
     async def show_achievements(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page = "achievements"
         self.update_buttons()
+        # FIX: defer trước để tránh timeout khi query DB
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         embed = await self.get_achievement_embed()
-        await FastInteraction.safe_edit(interaction, embed, self)
+        await interaction.edit_original_response(embed=embed, view=self)
 
+
+# ─────────────────────────────────────────────────────────────────
+# FIX 2: AchievementHubView — không gọi Supabase trong __init__.
+#         Thay vào đó, load page list lười (lazy) khi cần,
+#         hoặc nhận sẵn từ cog sau khi cog_load.
+# ─────────────────────────────────────────────────────────────────
 class AchievementHubView(OptimizedView):
     """Optimized achievement hub with caching and fast interactions"""
-    
-    def __init__(self, cog):
-        super().__init__(timeout=None)  # No timeout = permanent
+
+    def __init__(self, cog, page_options: list = None):
+        """
+        FIX: Không gọi Supabase trong __init__.
+        page_options được truyền từ ngoài sau khi đã fetch async.
+        """
+        super().__init__(timeout=None)
         self.cog = cog
         self.per_page = 10
-        self.embed_cache = EmbedCache(ttl=300)  # 5 minutes cache
-        self.add_page_select()
-        self.add_filter_select()
-    
+        self.embed_cache = EmbedCache(ttl=300)
+        # page_options: list of dict {"key": ..., "name": ..., "id": ...}
+        self._page_options = page_options or []
+        self._add_page_select()
+        self._add_filter_select()
+
+    @classmethod
+    async def create(cls, cog):
+        """FIX: Factory method async để fetch page list trước khi tạo view."""
+        try:
+            pages_result = cog.supabase.table("achievement_pages") \
+                .select("id, name, key") \
+                .order("id") \
+                .execute()
+            page_options = pages_result.data or []
+        except Exception as e:
+            logger.error(f"[AchievementHubView.create] Lỗi fetch pages: {e}")
+            page_options = []
+        return cls(cog, page_options)
+
     def parse_footer(self, embed: discord.Embed):
         """Parse state from footer text"""
         text = embed.footer.text if embed.footer else ""
-        
-        # Default values
+
         page = 0
         page_key = "all"
         filter_rarity = None
         search_query = None
-        
-        # Parse: "Trang 1/5 | Page: Event | Filter: rare | Search: keyword"
+
         page_match = re.search(r"Trang (\d+)/", text)
         if page_match:
             page = int(page_match.group(1)) - 1
-        
+
         page_key_match = re.search(r"\| Page: ([^|]+)", text)
         if page_key_match:
             page_key = page_key_match.group(1).strip()
-        
+
         filter_match = re.search(r"\| Filter: ([^|]+)", text)
         if filter_match:
             filter_rarity = filter_match.group(1).strip()
-        
+
         search_match = re.search(r"\| Search: (.+)$", text)
         if search_match:
             search_query = search_match.group(1).strip()
-        
+
         return page, page_key, filter_rarity, search_query
 
     def build_footer(self, page, max_page, page_key, filter_rarity, search_query, total):
-        """Build footer with all state info"""
         parts = [f"Trang {page + 1}/{max_page + 1}"]
         if total > 0:
             parts.append(f"Tổng: {total}")
@@ -152,94 +216,87 @@ class AchievementHubView(OptimizedView):
             parts.append(f"Search: {search_query}")
         return " | ".join(parts)
 
-    def add_page_select(self):
-        """Thêm dropdown chọn page"""
-        pages = self.cog.supabase.table("achievement_pages").select("id, name, key").order("id").execute()
-        
-        options = [discord.SelectOption(label="📋 Toàn bộ", value="all", description="Xem tất cả thành tựu")]
-        
-        for p in pages.data:
+    def _add_page_select(self):
+        """Thêm dropdown chọn page từ dữ liệu đã fetch sẵn"""
+        options = [
+            discord.SelectOption(label="📋 Toàn bộ", value="all", description="Xem tất cả thành tựu")
+        ]
+
+        for p in self._page_options:
             if len(options) >= 25:
                 break
-            # Use 'key' for value (shorter, URL-safe), 'name' for label
             page_key = p.get("key") or p["name"].lower().replace(" ", "_")[:50]
-            page_name = p["name"][:100] if p["name"].strip() else f"Page {p['id']}"
-            
+            page_name = (p["name"][:100] if p["name"].strip() else f"Page {p['id']}")
             options.append(discord.SelectOption(
                 label=page_name,
-                value=page_key[:100],  # Discord limit: 1-100 chars
+                value=page_key[:100],
                 description=f"Page {p['id']}"
             ))
-        
+
         select = discord.ui.Select(
             placeholder="📁 Chọn Page...",
             options=options,
             custom_id="page_select",
             row=0
         )
-        
+
         async def select_callback(interaction: discord.Interaction):
             await interaction.response.defer()
-            
-            # Parse current state from message
             embed = interaction.message.embeds[0]
-            page, page_key, filter_rarity, search_query = self.parse_footer(embed)
-            
-            # Update page_key, reset to page 0
+            _, _, filter_rarity, search_query = self.parse_footer(embed)
             new_page_key = select.values[0]
-            
             new_embed, _ = await self.build_embed_with_state(
-                page=0, page_key=new_page_key, filter_rarity=filter_rarity, search_query=search_query
+                page=0, page_key=new_page_key,
+                filter_rarity=filter_rarity, search_query=search_query
             )
             await interaction.edit_original_response(embed=new_embed, view=self)
-        
+
         select.callback = select_callback
         self.add_item(select)
 
-    def add_filter_select(self):
-        """Thêm dropdown filter độ hiếm"""
+    def _add_filter_select(self):
         filter_options = [
             discord.SelectOption(label="🌟 Tất cả", value="all"),
             discord.SelectOption(label="📗 Phổ biến (>20%)", value="common"),
             discord.SelectOption(label="📙 Hiếm (5-20%)", value="rare"),
             discord.SelectOption(label="📕 Cực hiếm (<5%)", value="legendary"),
         ]
-        
+
         select = discord.ui.Select(
             placeholder="🔍 Lọc theo độ hiếm...",
             options=filter_options,
             custom_id="filter_select",
             row=1
         )
-        
+
         async def filter_callback(interaction: discord.Interaction):
             await interaction.response.defer()
-            
-            # Parse current state from message
             embed = interaction.message.embeds[0]
-            page, page_key, _, search_query = self.parse_footer(embed)
-            
-            # Update filter, reset to page 0
+            _, page_key, _, search_query = self.parse_footer(embed)
             value = select.values[0]
             new_filter = None if value == "all" else value
-            
             new_embed, _ = await self.build_embed_with_state(
-                page=0, page_key=page_key, filter_rarity=new_filter, search_query=search_query
+                page=0, page_key=page_key,
+                filter_rarity=new_filter, search_query=search_query
             )
             await interaction.edit_original_response(embed=new_embed, view=self)
-        
+
         select.callback = filter_callback
         self.add_item(select)
 
     async def build_embed_with_state(self, page, page_key, filter_rarity, search_query):
         """Build embed with specific state"""
-        query = self.cog.supabase.table("achievements").select("id, display_name, description, name")
-        
-        # Filter theo page
+        query = self.cog.supabase.table("achievements") \
+            .select("id, display_name, description, name")
+
         if page_key != "all":
-            page_data = self.cog.supabase.table("achievement_pages").select("id").eq("key", page_key).execute()
+            page_data = self.cog.supabase.table("achievement_pages") \
+                .select("id").eq("key", page_key).execute()
             if page_data.data:
-                links = self.cog.supabase.table("achievement_page_links").select("achievement_id").eq("page_id", page_data.data[0]["id"]).execute()
+                links = self.cog.supabase.table("achievement_page_links") \
+                    .select("achievement_id") \
+                    .eq("page_id", page_data.data[0]["id"]) \
+                    .execute()
                 achievement_ids = [l["achievement_id"] for l in links.data]
                 if achievement_ids:
                     query = query.in_("id", achievement_ids)
@@ -249,95 +306,107 @@ class AchievementHubView(OptimizedView):
                         description=f"Page **{page_key}** không có thành tựu nào.",
                         color=discord.Color.blue()
                     )
-                    embed.set_footer(text=self.build_footer(0, 0, page_key, filter_rarity, search_query, 0))
+                    embed.set_footer(
+                        text=self.build_footer(0, 0, page_key, filter_rarity, search_query, 0)
+                    )
                     return embed, 0
 
-        # Lấy data
         all_data = query.execute().data or []
-        
-        # Filter by search
+
         if search_query:
             search_lower = search_query.lower()
-            all_data = [a for a in all_data if search_lower in a.get("display_name", "").lower() 
-                       or search_lower in a.get("description", "").lower()
-                       or search_lower in a.get("name", "").lower()]
-        
-        # Filter by rarity
+            all_data = [
+                a for a in all_data
+                if search_lower in a.get("display_name", "").lower()
+                or search_lower in a.get("description", "").lower()
+                or search_lower in a.get("name", "").lower()
+            ]
+
         if filter_rarity:
             all_data = await self._filter_by_rarity(all_data, filter_rarity)
-        
-        # Pagination
+
         total = len(all_data)
         max_page = max(0, (total - 1) // self.per_page) if total > 0 else 0
         page = max(0, min(page, max_page))
-        
+
         start = page * self.per_page
         end = start + self.per_page
-        page_data = all_data[start:end]
-        
-        # Build embed title
+        page_slice = all_data[start:end]
+
         title = "🏆 Danh sách Thành Tựu"
         if page_key != "all":
             title += f" - {page_key}"
         if search_query:
             title = f"🔍 Tìm kiếm: '{search_query}'"
-        
+
         embed = discord.Embed(title=title, color=discord.Color.blue())
-        
-        if not page_data:
+
+        if not page_slice:
             embed.description = "Không tìm thấy thành tựu nào."
         else:
             lines = []
-            for a in page_data:
+            for a in page_slice:
                 desc = a.get("description") or "Không có mô tả"
                 if len(desc) > 50:
                     desc = desc[:47] + "..."
                 rarity_emoji = await self._get_rarity_emoji(a["id"])
-                lines.append(f"{rarity_emoji} **[{a['id']}] {a['display_name']}**\n└ {desc}")
+                lines.append(
+                    f"{rarity_emoji} **[{a['id']}] {a['display_name']}**\n└ {desc}"
+                )
             embed.description = "\n\n".join(lines)
-        
-        # Build footer with state
-        embed.set_footer(text=self.build_footer(page, max_page, page_key, filter_rarity, search_query, total))
-        
+
+        embed.set_footer(
+            text=self.build_footer(page, max_page, page_key, filter_rarity, search_query, total)
+        )
         return embed, max_page
 
     async def _filter_by_rarity(self, achievements, filter_rarity):
-        """Filter by rarity"""
         total_users = len(set(
-            row["user_id"] for row in 
+            row["user_id"] for row in
             self.cog.supabase.table("user_achievements").select("user_id").execute().data or []
         ))
-        
+
         if total_users == 0:
             return achievements
-        
+
         filtered = []
         for ach in achievements:
-            count = self.cog.supabase.table("user_achievements").select("id", count="exact").eq("achievement_id", ach["id"]).execute().count or 0
+            count = (
+                self.cog.supabase.table("user_achievements")
+                .select("id", count="exact")
+                .eq("achievement_id", ach["id"])
+                .execute()
+                .count or 0
+            )
             percent = (count / total_users) * 100
-            
+
             if filter_rarity == "common" and percent > 20:
                 filtered.append(ach)
             elif filter_rarity == "rare" and 5 <= percent <= 20:
                 filtered.append(ach)
             elif filter_rarity == "legendary" and percent < 5:
                 filtered.append(ach)
-        
+
         return filtered
 
     async def _get_rarity_emoji(self, achievement_id):
-        """Lấy emoji theo độ hiếm"""
         total_users = len(set(
-            row["user_id"] for row in 
+            row["user_id"] for row in
             self.cog.supabase.table("user_achievements").select("user_id").execute().data or []
         ))
-        
+
         if total_users == 0:
             return "📄"
-        
-        count = self.cog.supabase.table("user_achievements").select("id", count="exact").eq("achievement_id", achievement_id).execute().count or 0
+
+        count = (
+            self.cog.supabase.table("user_achievements")
+            .select("id", count="exact")
+            .eq("achievement_id", achievement_id)
+            .execute()
+            .count or 0
+        )
         percent = (count / total_users) * 100
-        
+
         if percent > 20:
             return "📗"
         elif percent > 5:
@@ -348,43 +417,37 @@ class AchievementHubView(OptimizedView):
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="hub_prev", row=2)
     async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        
-        # Parse state from message
         embed = interaction.message.embeds[0]
         page, page_key, filter_rarity, search_query = self.parse_footer(embed)
-        
-        # Go to previous page
         new_page = max(0, page - 1)
-        
         new_embed, _ = await self.build_embed_with_state(
-            page=new_page, page_key=page_key, filter_rarity=filter_rarity, search_query=search_query
+            page=new_page, page_key=page_key,
+            filter_rarity=filter_rarity, search_query=search_query
         )
         await interaction.edit_original_response(embed=new_embed, view=self)
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, custom_id="hub_next", row=2)
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        
-        # Parse state from message
         embed = interaction.message.embeds[0]
         page, page_key, filter_rarity, search_query = self.parse_footer(embed)
-        
-        # Get max page
-        _, max_page = await self.build_embed_with_state(
-            page=page, page_key=page_key, filter_rarity=filter_rarity, search_query=search_query
+        # FIX: không build embed 2 lần — tính max_page từ lần build duy nhất
+        new_embed, max_page = await self.build_embed_with_state(
+            page=page, page_key=page_key,
+            filter_rarity=filter_rarity, search_query=search_query
         )
-        
-        # Go to next page
         new_page = min(max_page, page + 1)
-        
-        new_embed, _ = await self.build_embed_with_state(
-            page=new_page, page_key=page_key, filter_rarity=filter_rarity, search_query=search_query
-        )
+        if new_page != page:
+            new_embed, _ = await self.build_embed_with_state(
+                page=new_page, page_key=page_key,
+                filter_rarity=filter_rarity, search_query=search_query
+            )
         await interaction.edit_original_response(embed=new_embed, view=self)
 
     @discord.ui.button(label="🔍 Tìm kiếm", style=discord.ButtonStyle.primary, custom_id="hub_search", row=2)
     async def search(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(SearchAchievementModal(self.cog, self))
+
 
 class SearchAchievementModal(discord.ui.Modal, title="Tìm kiếm Thành Tựu"):
     def __init__(self, cog, view):
@@ -400,15 +463,14 @@ class SearchAchievementModal(discord.ui.Modal, title="Tìm kiếm Thành Tựu")
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Parse current state from message
         embed = interaction.message.embeds[0]
         page, page_key, filter_rarity, _ = self.view.parse_footer(embed)
-        
-        # Search with new keyword
         new_embed, _ = await self.view.build_embed_with_state(
-            page=0, page_key=page_key, filter_rarity=filter_rarity, search_query=self.search_input.value
+            page=0, page_key=page_key,
+            filter_rarity=filter_rarity, search_query=self.search_input.value
         )
         await interaction.response.edit_message(embed=new_embed, view=self.view)
+
 
 class CheckTTView(discord.ui.View):
     def __init__(self, cog, achievement_id: int):
@@ -425,7 +487,6 @@ class CheckTTView(discord.ui.View):
         per_page = 10
         offset = page * per_page
 
-        # Lấy achievement name
         ach = self.cog.supabase.table("achievements") \
             .select("display_name") \
             .eq("id", self.achievement_id) \
@@ -441,16 +502,15 @@ class CheckTTView(discord.ui.View):
 
         ach_name = ach.data["display_name"]
 
-        # Tổng số người có thành tựu
         total = self.cog.supabase.table("user_achievements") \
             .select("id", count="exact") \
             .eq("achievement_id", self.achievement_id) \
             .execute()
 
         total_count = total.count or 0
-        max_page = max(0, (total_count - 1) // per_page)
+        max_page = max(0, (total_count - 1) // per_page) if total_count > 0 else 0
+        page = max(0, min(page, max_page))  # FIX: giới hạn không vượt max
 
-        # Lấy 10 người theo trang
         data = self.cog.supabase.table("user_achievements") \
             .select("user_id") \
             .eq("achievement_id", self.achievement_id) \
@@ -465,36 +525,26 @@ class CheckTTView(discord.ui.View):
         if not data.data:
             embed.description = "Không có ai có thành tựu này."
         else:
-            lines = []
-            for row in data.data:
-                uid = row["user_id"]
-                lines.append(f"<@{uid}> (`{uid}`)")
-
+            lines = [f"<@{row['user_id']}> (`{row['user_id']}`)" for row in data.data]
             embed.description = "\n".join(lines)
 
-        embed.set_footer(text=f"Trang {page+1}/{max_page+1} • Tổng {total_count} người")
+        embed.set_footer(text=f"Trang {page + 1}/{max_page + 1} • Tổng {total_count} người")
         return embed
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="checktt_prev")
     async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-
         page = self.get_page_from_footer(interaction.message.embeds[0])
-        page = max(0, page - 1)
-
-        embed = await self.build_embed(page)
+        embed = await self.build_embed(max(0, page - 1))
         await interaction.edit_original_response(embed=embed, view=self)
-
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, custom_id="checktt_next")
     async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-
         page = self.get_page_from_footer(interaction.message.embeds[0])
-        page += 1
-
-        embed = await self.build_embed(page)
+        embed = await self.build_embed(page + 1)
         await interaction.edit_original_response(embed=embed, view=self)
+
 
 class BXHView(discord.ui.View):
     def __init__(self, cog):
@@ -514,63 +564,52 @@ class BXHView(discord.ui.View):
             .execute()
 
         counts = {}
-
         for row in data.data or []:
             uid = row["user_id"]
             counts[uid] = counts.get(uid, 0) + 1
 
         sorted_users = sorted(counts.items(), key=lambda x: x[1], reverse=True)
-
         total_users = len(sorted_users)
-        max_page = max(0, (total_users - 1) // per_page)
-
+        max_page = max(0, (total_users - 1) // per_page) if total_users > 0 else 0
         page = max(0, min(page, max_page))
+
         start = page * per_page
         end = start + per_page
 
-        embed = discord.Embed(
-            title="Bảng Xếp Hạng Thành Tựu",
-            color=discord.Color.gold()
-        )
+        embed = discord.Embed(title="Bảng Xếp Hạng Thành Tựu", color=discord.Color.gold())
 
         if not sorted_users:
             embed.description = "Chưa có dữ liệu."
         else:
-            lines = []
-            for idx, (uid, total) in enumerate(sorted_users[start:end], start=start+1):
-                lines.append(f"**#{idx}** <@{uid}> — {total} thành tựu")
-
+            lines = [
+                f"**#{idx}** <@{uid}> — {total} thành tựu"
+                for idx, (uid, total) in enumerate(sorted_users[start:end], start=start + 1)
+            ]
             embed.description = "\n".join(lines)
 
-        embed.set_footer(text=f"Trang {page+1}/{max_page+1} • Tổng {total_users} người")
-
+        embed.set_footer(text=f"Trang {page + 1}/{max_page + 1} • Tổng {total_users} người")
         return embed, max_page
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="bxh_prev")
     async def prev(self, interaction, button):
         await interaction.response.defer()
-
         page = self.get_page_from_footer(interaction.message.embeds[0])
-        page -= 1
-
-        embed, _ = await self.build_embed(page)
+        embed, _ = await self.build_embed(max(0, page - 1))
         await interaction.edit_original_response(embed=embed, view=self)
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, custom_id="bxh_next")
     async def next(self, interaction, button):
         await interaction.response.defer()
-
         page = self.get_page_from_footer(interaction.message.embeds[0])
-        page += 1
-
-        embed, _ = await self.build_embed(page)
+        embed, _ = await self.build_embed(page + 1)
         await interaction.edit_original_response(embed=embed, view=self)
+
 
 class TKETTView(discord.ui.View):
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
-        self.mode = "popular"  # popular | rare
+        self.mode = "popular"
 
     def get_page_from_footer(self, embed):
         text = embed.footer.text or ""
@@ -580,12 +619,10 @@ class TKETTView(discord.ui.View):
     async def build_embed(self, page=0):
         per_page = 10
 
-        # Lấy toàn bộ achievements
         ach_data = self.cog.supabase.table("achievements") \
             .select("id, display_name") \
             .execute()
 
-        # Lấy toàn bộ user_achievements
         ua_data = self.cog.supabase.table("user_achievements") \
             .select("user_id, achievement_id") \
             .execute()
@@ -593,13 +630,10 @@ class TKETTView(discord.ui.View):
         achievements = ach_data.data or []
         user_achievements = ua_data.data or []
 
-        # Đếm unique user
         unique_users = {row["user_id"] for row in user_achievements}
-        total_users = len(unique_users) or 1  # tránh chia 0
+        total_users = len(unique_users) or 1
 
-        # Đếm số người đạt từng achievement
         counts = {a["id"]: 0 for a in achievements}
-
         for row in user_achievements:
             aid = row["achievement_id"]
             if aid in counts:
@@ -611,7 +645,6 @@ class TKETTView(discord.ui.View):
             percent = (total / total_users) * 100
             stats.append((a["display_name"], total, percent))
 
-        # Sort theo mode
         if self.mode == "popular":
             stats.sort(key=lambda x: x[1], reverse=True)
             title_mode = "Phổ biến nhất"
@@ -620,9 +653,9 @@ class TKETTView(discord.ui.View):
             title_mode = "Hiếm nhất"
 
         total_items = len(stats)
-        max_page = max(0, (total_items - 1) // per_page)
-
+        max_page = max(0, (total_items - 1) // per_page) if total_items > 0 else 0
         page = max(0, min(page, max_page))
+
         start = page * per_page
         end = start + per_page
 
@@ -634,50 +667,43 @@ class TKETTView(discord.ui.View):
         if not stats:
             embed.description = "Chưa có dữ liệu."
         else:
-            lines = []
-            for idx, (name, total, percent) in enumerate(stats[start:end], start=start+1):
-                lines.append(
-                    f"**{idx}. {name}** : {total} người đạt - {percent:.1f}%"
-                )
-
+            lines = [
+                f"**{idx}. {name}** : {total} người đạt - {percent:.1f}%"
+                for idx, (name, total, percent) in enumerate(stats[start:end], start=start + 1)
+            ]
             embed.description = "\n".join(lines)
 
-        embed.set_footer(text=f"Trang {page+1}/{max_page+1} • Tổng {total_items} thành tựu")
-
+        embed.set_footer(text=f"Trang {page + 1}/{max_page + 1} • Tổng {total_items} thành tựu")
         return embed
 
-    # ===== NÚT CHUYỂN TIÊU CHÍ =====
-
-    @discord.ui.button(label="Theo độ Phổ biến", style=discord.ButtonStyle.success,custom_id="tkett_popular", row=0)
+    @discord.ui.button(label="Theo độ Phổ biến", style=discord.ButtonStyle.success, custom_id="tkett_popular", row=0)
     async def popular(self, interaction, button):
         await interaction.response.defer()
         self.mode = "popular"
         embed = await self.build_embed(0)
         await interaction.edit_original_response(embed=embed, view=self)
 
-    @discord.ui.button(label="Theo độ Hiếm", style=discord.ButtonStyle.secondary,custom_id="tkett_rare", row=0)
+    @discord.ui.button(label="Theo độ Hiếm", style=discord.ButtonStyle.secondary, custom_id="tkett_rare", row=0)
     async def rare(self, interaction, button):
         await interaction.response.defer()
         self.mode = "rare"
         embed = await self.build_embed(0)
         await interaction.edit_original_response(embed=embed, view=self)
-    # ===== PAGINATION =====
 
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary,custom_id="tkett_prev", row=4)
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, custom_id="tkett_prev", row=4)
     async def prev(self, interaction, button):
         await interaction.response.defer()
         page = self.get_page_from_footer(interaction.message.embeds[0])
-        page -= 1
-        embed = await self.build_embed(page)
+        embed = await self.build_embed(max(0, page - 1))
         await interaction.edit_original_response(embed=embed, view=self)
 
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary,custom_id="tkett_next", row=4)
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary, custom_id="tkett_next", row=4)
     async def next(self, interaction, button):
         await interaction.response.defer()
         page = self.get_page_from_footer(interaction.message.embeds[0])
-        page += 1
-        embed = await self.build_embed(page)
+        embed = await self.build_embed(page + 1)
         await interaction.edit_original_response(embed=embed, view=self)
+
 
 # ================= COG =================
 
@@ -707,24 +733,22 @@ class ArmySystem(commands.Cog):
         self.load_positions()
 
     async def cog_load(self):
-        # Register permanent views (timeout=None)
-        self.bot.add_view(AchievementHubView(self))
+        # FIX: dùng factory method async để không gọi Supabase đồng bộ trong __init__
+        hub_view = await AchievementHubView.create(self)
+        self.bot.add_view(hub_view)
         self.bot.add_view(BXHView(self))
         self.bot.add_view(TKETTView(self))
 
     def load_positions(self):
         data = self.supabase.table("positions").select("*").execute()
-
         rules = []
         for row in data.data:
             roles = set(int(x) for x in row["role_ids"].split(",") if x)
-
             rules.append({
                 "name": row["name"],
                 "roles": roles,
                 "priority": row["priority"]
             })
-        
         self.position_rules = rules
 
     # ===== PERMISSION CHECK =====
@@ -742,7 +766,6 @@ class ArmySystem(commands.Cog):
 
         allowed_roles = {r["role_id"] for r in data.data}
         user_roles = {role.id for role in ctx.author.roles}
-
         return bool(allowed_roles & user_roles)
 
     # ===== BASIC INFO =====
@@ -757,34 +780,26 @@ class ArmySystem(commands.Cog):
 
     def get_position(self, member):
         role_ids = {r.id for r in member.roles}
-        matched = []
-
-        for rule in self.position_rules:
-            if rule["roles"].issubset(role_ids):
-                matched.append(rule)
-
+        matched = [rule for rule in self.position_rules if rule["roles"].issubset(role_ids)]
         if not matched:
             return "Không có"
-
         matched.sort(key=lambda x: x["priority"], reverse=True)
         return matched[0]["name"]
-    
+
     # ===== COMMANDS =====
 
     @commands.command(name="armyinfo")
     async def armyinfo(self, ctx, member: discord.Member = None):
         target = member or ctx.author
-
         view = ArmyInfoView(self, target)
         embed = await view.get_info_embed()
         await ctx.send(embed=embed, view=view)
 
-
-    app_commands.command(name="armyinfo", description="Xem thông tin quân nhân")
+    # FIX: thêm @ cho decorator bị thiếu
+    @app_commands.command(name="armyinfo", description="Xem thông tin quân nhân")
     @app_commands.describe(member="Chọn người muốn xem (để trống = xem bản thân)")
     async def armyinfo_slash(self, interaction: discord.Interaction, member: discord.Member = None):
         target = member or interaction.user
-
         view = ArmyInfoView(self, target)
         embed = await view.get_info_embed()
         await interaction.response.send_message(embed=embed, view=view)
@@ -815,29 +830,20 @@ class ArmySystem(commands.Cog):
 
         normalized = normalize_name(name)
 
-        # kiểm tra trùng name
         exist = self.supabase.table("achievements") \
-            .select("id") \
-            .eq("name", normalized) \
-            .execute()
+            .select("id").eq("name", normalized).execute()
 
         if exist.data:
             return await ctx.send("Thành tựu đã tồn tại.")
 
-        # lấy toàn bộ id hiện có
         data = self.supabase.table("achievements") \
-            .select("id") \
-            .order("id") \
-            .execute()
+            .select("id").order("id").execute()
 
         used_ids = {row["id"] for row in data.data}
-
-        # tìm số nhỏ nhất chưa dùng
         new_id = 1
         while new_id in used_ids:
             new_id += 1
 
-        # insert
         self.supabase.table("achievements").insert({
             "id": new_id,
             "name": normalized,
@@ -851,107 +857,104 @@ class ArmySystem(commands.Cog):
     async def givett(self, ctx, member: discord.Member, achievement_id: str):
         if not await self.is_whitelisted(ctx, "assigntt"):
             return await ctx.send("Bạn không có quyền.")
-        
-        # Validate achievement ID
+
         aid = validate_achievement_id(achievement_id)
         if aid is None:
             return await ctx.send("❌ ID thành tựu không hợp lệ. Phải là số nguyên dương.")
-        
-        @safe_db_operation("givett")
-        async def get_achievement():
-            return supabase.table("achievements") \
-                .select("display_name") \
-                .eq("id", aid) \
-                .execute()
-        
-        ach_result = await get_achievement()
+
+        # FIX: dùng self.supabase thay vì supabase global
+        ach_result = self.supabase.table("achievements") \
+            .select("display_name").eq("id", aid).execute()
+
         if not ach_result or not ach_result.data:
             return await ctx.send("❌ ID thành tựu không tồn tại.")
-        
-        @safe_db_operation("givett")
-        async def assign_achievement():
-            supabase.table("user_achievements").insert({
-                "user_id": member.id,
+
+        # Kiểm tra đã có chưa
+        existing = self.supabase.table("user_achievements") \
+            .select("id") \
+            .eq("user_id", str(member.id)) \
+            .eq("achievement_id", aid) \
+            .execute()
+
+        if existing.data:
+            return await ctx.send("❌ Người này đã có thành tựu này.")
+
+        try:
+            self.supabase.table("user_achievements").insert({
+                "user_id": str(member.id),
                 "achievement_id": aid
             }).execute()
-            return True
-        
-        success = await assign_achievement()
-        if not success:
-            return await ctx.send("❌ Người này đã có thành tựu này.")
-        
+        except Exception as e:
+            logger.error(f"[givett] Lỗi insert: {e}")
+            return await ctx.send("❌ Không thể gán thành tựu, thử lại sau.")
+
         await ctx.send(f"✅ Đã gán **{ach_result.data[0]['display_name']}** cho {member.display_name}")
 
     @commands.command(name="listtt")
     async def listtt(self, ctx):
-        """Hiển thị danh sách thành tựu với filter và search (shared & permanent)"""
-        view = AchievementHubView(self)
+        """Hiển thị danh sách thành tựu với filter và search"""
+        # FIX: dùng factory method async
+        view = await AchievementHubView.create(self)
         embed, _ = await view.build_embed_with_state(
             page=0, page_key="all", filter_rarity=None, search_query=None
         )
         await ctx.send(embed=embed, view=view)
 
-
     @commands.command(name="removett")
     async def removett(self, ctx, member: discord.Member, achievement_id: str):
         if not await self.is_whitelisted(ctx, "removett"):
             return await ctx.send("Bạn không có quyền.")
-        
-        # Validate achievement ID
+
         aid = validate_achievement_id(achievement_id)
         if aid is None:
             return await ctx.send("❌ ID thành tựu không hợp lệ. Phải là số nguyên dương.")
-        
-        @safe_db_operation("removett")
-        async def remove_achievement():
-            res = supabase.table("user_achievements") \
+
+        # FIX: dùng self.supabase thay vì supabase global
+        try:
+            res = self.supabase.table("user_achievements") \
                 .delete() \
-                .eq("user_id", member.id) \
+                .eq("user_id", str(member.id)) \
                 .eq("achievement_id", aid) \
                 .execute()
-            return res.data
-        
-        deleted_data = await remove_achievement()
+            deleted_data = res.data
+        except Exception as e:
+            logger.error(f"[removett] Lỗi delete: {e}")
+            return await ctx.send("❌ Lỗi khi xoá, thử lại sau.")
+
         if not deleted_data:
             return await ctx.send("❌ Người này không có thành tựu đó.")
-        
+
         await ctx.send(f"✅ Đã gỡ thành tựu ID {aid} khỏi {member.display_name}")
 
     @commands.command(name="deletett")
     async def deletett(self, ctx, achievement_id: str):
         if not await self.is_whitelisted(ctx, "deletett"):
             return await ctx.send("Bạn không có quyền.")
-        
-        # Validate achievement ID
+
         aid = validate_achievement_id(achievement_id)
         if aid is None:
             return await ctx.send("❌ ID thành tựu không hợp lệ. Phải là số nguyên dương.")
-        
-        @safe_db_operation("deletett")
-        async def get_achievement():
-            return supabase.table("achievements") \
-                .select("display_name") \
-                .eq("id", aid) \
-                .execute()
-        
-        ach_result = await get_achievement()
+
+        # FIX: dùng self.supabase thay vì supabase global
+        ach_result = self.supabase.table("achievements") \
+            .select("display_name").eq("id", aid).execute()
+
         if not ach_result or not ach_result.data:
             return await ctx.send("❌ ID không tồn tại.")
-        
+
         name = ach_result.data[0]["display_name"]
-        
-        @safe_db_operation("deletett")
-        async def delete_achievement():
-            res = supabase.table("achievements") \
-                .delete() \
-                .eq("id", aid) \
-                .execute()
-            return res.data
-        
-        deleted_data = await delete_achievement()
+
+        try:
+            res = self.supabase.table("achievements") \
+                .delete().eq("id", aid).execute()
+            deleted_data = res.data
+        except Exception as e:
+            logger.error(f"[deletett] Lỗi delete: {e}")
+            return await ctx.send("❌ Lỗi khi xoá, thử lại sau.")
+
         if not deleted_data:
             return await ctx.send("❌ Không thể xoá thành tựu này.")
-        
+
         await ctx.send(f"✅ Đã xoá thành tựu **{name}** (ID: {aid})")
 
     @commands.command(name="newpos")
@@ -963,30 +966,20 @@ class ArmySystem(commands.Cog):
         if not roles:
             return await ctx.send("Phải tag ít nhất 1 role.")
 
-        # Xoá toàn bộ role mention khỏi content
         clean_content = content
         for r in roles:
             clean_content = clean_content.replace(f"<@&{r.id}>", "")
-
         clean_content = clean_content.strip()
-
-        # Nếu người dùng nhập kiểu: "@role | Tên | 5"
-        # thì sau khi xoá role sẽ thành: "| Tên | 5"
-        # Ta bỏ dấu | đầu nếu có
         if clean_content.startswith("|"):
             clean_content = clean_content[1:].strip()
 
         parts = [p.strip() for p in clean_content.split("|") if p.strip()]
-
         name = parts[0] if len(parts) >= 1 else ""
         priority = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
 
         if not name:
-            return await ctx.send(
-                "Thiếu tên chức vụ. Cú pháp: !newpos @role1 @role2 | Tên | priority"
-            )
+            return await ctx.send("Thiếu tên chức vụ. Cú pháp: !newpos @role1 @role2 | Tên | priority")
 
-        # Hỗ trợ nhiều role (đã có)
         role_ids_str = ",".join(str(r.id) for r in roles)
 
         self.supabase.table("positions").insert({
@@ -998,7 +991,6 @@ class ArmySystem(commands.Cog):
         self.load_positions()
 
         role_names = ", ".join(r.name for r in roles)
-
         await ctx.send(
             f"Đã tạo chức vụ **{name}**\n"
             f"Role áp dụng: {role_names}\n"
@@ -1008,33 +1000,24 @@ class ArmySystem(commands.Cog):
     @commands.command(name="listpos")
     async def listpos(self, ctx):
         data = self.supabase.table("positions") \
-            .select("*") \
-            .order("priority", desc=True) \
-            .execute()
+            .select("*").order("priority", desc=True).execute()
 
         if not data.data:
             return await ctx.send("Chưa có chức vụ nào.")
 
-        lines = []
-        for row in data.data:
-            lines.append(f"[{row['id']}] {row['name']} (priority: {row['priority']})")
-
+        lines = [f"[{row['id']}] {row['name']} (priority: {row['priority']})" for row in data.data]
         await ctx.send("\n".join(lines))
 
     @commands.command(name="checktt")
     async def checktt(self, ctx, achievement_id: int):
-        # kiểm tra tồn tại
         ach = self.supabase.table("achievements") \
-            .select("id") \
-            .eq("id", achievement_id) \
-            .execute()
+            .select("id").eq("id", achievement_id).execute()
 
         if not ach.data:
             return await ctx.send("Không tìm thấy thành tựu với ID này.")
 
         view = CheckTTView(self, achievement_id)
         embed = await view.build_embed(0)
-
         await ctx.send(embed=embed, view=view)
 
     @commands.command(name="createpage")
@@ -1043,15 +1026,10 @@ class ArmySystem(commands.Cog):
             return await ctx.send("Bạn không có quyền.")
 
         name = name.strip()
-
-        # Tạo key tự động
         key = name.lower().replace(" ", "_")
 
-        # Check trùng key
         exist = self.supabase.table("achievement_pages") \
-            .select("id") \
-            .eq("key", key) \
-            .execute()
+            .select("id").eq("key", key).execute()
 
         if exist.data:
             return await ctx.send("Page đã tồn tại (trùng key).")
@@ -1069,17 +1047,13 @@ class ArmySystem(commands.Cog):
             return await ctx.send("Bạn không có quyền.")
 
         page = self.supabase.table("achievement_pages") \
-            .select("id") \
-            .eq("name", name) \
-            .execute()
+            .select("id").eq("name", name).execute()
 
         if not page.data:
             return await ctx.send("Page không tồn tại.")
 
         self.supabase.table("achievement_pages") \
-            .delete() \
-            .eq("name", name) \
-            .execute()
+            .delete().eq("name", name).execute()
 
         await ctx.send(f"Đã xoá page **{name}**")
 
@@ -1089,7 +1063,6 @@ class ArmySystem(commands.Cog):
             return await ctx.send("Bạn không có quyền.")
 
         parts = content.split("|")
-
         if len(parts) != 2:
             return await ctx.send("Cú pháp: !addpage <tên page> | <achievement_id>")
 
@@ -1101,29 +1074,22 @@ class ArmySystem(commands.Cog):
 
         achievement_id = int(achievement_id)
 
-        # --- Kiểm tra page tồn tại ---
         page = self.supabase.table("achievement_pages") \
-            .select("id") \
-            .ilike("name", page_name) \
-            .execute()
+            .select("id").ilike("name", page_name).execute()
 
         if not page.data:
             return await ctx.send("Page không tồn tại.")
 
         page_id = page.data[0]["id"]
 
-        # --- Kiểm tra achievement tồn tại ---
         ach = self.supabase.table("achievements") \
-            .select("id, display_name") \
-            .eq("id", achievement_id) \
-            .execute()
+            .select("id, display_name").eq("id", achievement_id).execute()
 
         if not ach.data:
             return await ctx.send("ID thành tựu không tồn tại.")
 
         achievement_name = ach.data[0]["display_name"]
 
-        # --- Kiểm tra đã tồn tại link chưa ---
         existing = self.supabase.table("achievement_page_links") \
             .select("id") \
             .eq("achievement_id", achievement_id) \
@@ -1133,7 +1099,6 @@ class ArmySystem(commands.Cog):
         if existing.data:
             return await ctx.send("Thành tựu đã có trong page này rồi.")
 
-        # --- Insert link ---
         self.supabase.table("achievement_page_links").insert({
             "achievement_id": achievement_id,
             "page_id": page_id
@@ -1155,6 +1120,7 @@ class ArmySystem(commands.Cog):
         view = TKETTView(self)
         embed = await view.build_embed(0)
         await ctx.send(embed=embed, view=view)
+
 
 async def setup(bot):
     await bot.add_cog(ArmySystem(bot))
