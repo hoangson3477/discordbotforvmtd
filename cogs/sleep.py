@@ -7,7 +7,7 @@ class SleepCog(commands.Cog):
         self.bot = bot
         self.sleeping_users = {}  # {user_id: message}
 
-    @commands.command(name="ngủ", aliases=["ngu", "sleep", "ngu"])
+    @commands.command(name="ngủ", aliases=[ "sleep"])
     async def ngu(self, ctx, *, lý_do: str = None):
         """Đi ngủ và đặt trạng thái ngủ cho bản thân."""
         user = ctx.author
