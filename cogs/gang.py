@@ -13,36 +13,64 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Helpers
 # ─────────────────────────────────────────────
 
-def get_gang_by_name(guild_id: str, name: str):
-    """Trả về row gang hoặc None."""
+def one(res) -> dict | None:
+    """Lấy phần tử đầu tiên từ kết quả Supabase, hoặc None nếu không có.
+    Dùng thay cho maybe_single() vì maybe_single() trả về None object khi không có row.
+    """
+    return res.data[0] if res.data else None
+
+
+def get_gang_by_name(guild_id: str, name: str) -> dict | None:
     res = (
         supabase.table("gangs")
         .select("*")
         .eq("guild_id", guild_id)
         .eq("name", name)
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    return res.data
+    return one(res)
 
 
-def get_gang_of_user(guild_id: str, user_id: str):
-    """Trả về (gang_row, member_row) nếu user đang trong gang, ngược lại (None, None)."""
-    res = (
+def get_gang_of_user(guild_id: str, user_id: str) -> tuple[dict | None, dict | None]:
+    """Trả về (gang_row, member_row) hoặc (None, None)."""
+    mem_res = (
         supabase.table("gang_members")
-        .select("*, gangs(*)")
+        .select("*")
         .eq("user_id", user_id)
-        .eq("gangs.guild_id", guild_id)
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    if res.data:
-        return res.data["gangs"], res.data
-    return None, None
+    member_row = one(mem_res)
+    if not member_row:
+        return None, None
+
+    gang_res = (
+        supabase.table("gangs")
+        .select("*")
+        .eq("id", member_row["gang_id"])
+        .eq("guild_id", guild_id)
+        .limit(1)
+        .execute()
+    )
+    gang_row = one(gang_res)
+    return (gang_row, member_row) if gang_row else (None, None)
 
 
-def get_members_of_gang(gang_id: str):
-    """Trả về list member rows của gang."""
+def get_led_gang(guild_id: str, user_id: str) -> dict | None:
+    """Trả về gang row nếu user_id là leader, ngược lại None."""
+    res = (
+        supabase.table("gangs")
+        .select("*")
+        .eq("guild_id", guild_id)
+        .eq("leader_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return one(res)
+
+
+def get_members_of_gang(gang_id: str) -> list[dict]:
     res = (
         supabase.table("gang_members")
         .select("*")
@@ -59,8 +87,7 @@ def get_members_of_gang(gang_id: str):
 class Gang(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # invite cache: user_id -> gang_name  (vẫn in-memory như cũ)
-        self.invites: dict[str, str] = {}
+        self.invites: dict[str, str] = {}  # user_id -> gang_name
 
     # ── CREATE GANG ──────────────────────────
     @commands.command()
@@ -68,16 +95,13 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        # đã trong gang chưa?
         gang, _ = get_gang_of_user(guild_id, user_id)
         if gang:
             return await ctx.send("❌ Bạn đã ở trong một gang!")
 
-        # tên trùng?
         if get_gang_by_name(guild_id, name):
             return await ctx.send("❌ Gang đã tồn tại!")
 
-        # tạo gang
         gang_res = (
             supabase.table("gangs")
             .insert({"guild_id": guild_id, "name": name, "leader_id": user_id})
@@ -85,7 +109,6 @@ class Gang(commands.Cog):
         )
         gang_id = gang_res.data[0]["id"]
 
-        # thêm leader vào gang_members
         supabase.table("gang_members").insert(
             {"gang_id": gang_id, "user_id": user_id, "rank_name": "Leader"}
         ).execute()
@@ -113,7 +136,6 @@ class Gang(commands.Cog):
         leader = await self.bot.fetch_user(int(gang["leader_id"]))
         embed.add_field(name="Leader", value=leader.mention, inline=False)
 
-        # nhóm theo rank
         ranks: dict[str, list[str]] = {}
         for m in members:
             ranks.setdefault(m["rank_name"], []).append(m["user_id"])
@@ -136,30 +158,17 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        # kiểm tra người mời có phải leader
-        gang = get_gang_by_name(guild_id, "")  # placeholder
-        # lấy gang mà user_id là leader
-        res = (
-            supabase.table("gangs")
-            .select("*")
-            .eq("guild_id", guild_id)
-            .eq("leader_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        if not res.data:
+        gang = get_led_gang(guild_id, user_id)
+        if not gang:
             return await ctx.send("❌ Chỉ Leader mới được mời.")
 
-        gang = res.data
         target_id = str(member.id)
-
-        # đã trong gang chưa?
         existing = (
             supabase.table("gang_members")
             .select("id")
             .eq("gang_id", gang["id"])
             .eq("user_id", target_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
         if existing.data:
@@ -177,7 +186,6 @@ class Gang(commands.Cog):
 
         guild_id = str(ctx.guild.id)
 
-        # đã trong gang khác chưa?
         existing_gang, _ = get_gang_of_user(guild_id, user_id)
         if existing_gang:
             return await ctx.send("❌ Bạn đã thuộc một gang khác rồi.")
@@ -200,27 +208,17 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        gang = self._get_led_gang(guild_id, user_id)
+        gang = get_led_gang(guild_id, user_id)
         if not gang:
             return await ctx.send("❌ Chỉ Leader mới tạo chức vụ.")
 
-        # kiểm tra rank tồn tại chưa (qua gang_members)
         members = get_members_of_gang(gang["id"])
-        existing_ranks = {m["rank_name"] for m in members}
-        # cũng kiểm tra trong bảng rank riêng nếu có; ở đây rank được lưu trực tiếp trên member
-        # nên chỉ cần check xem có member nào đang giữ rank này không — hoặc lưu rank list riêng.
-        # Thiết kế đơn giản: rank hợp lệ = tập hợp rank_name đang tồn tại + rank mới sắp tạo.
-        # Để tránh tạo trùng, ta cần bảng ranks riêng. Tạm thời dùng cache in-memory per-gang.
-        # Xem ghi chú ở cuối file.
-        if role_name in existing_ranks:
-            return await ctx.send("❌ Rank đã tồn tại (có member đang giữ rank này).")
+        if role_name in {m["rank_name"] for m in members}:
+            return await ctx.send("❌ Rank đã tồn tại.")
 
-        # Với thiết kế hiện tại, rank "tồn tại" khi có member giữ nó.
-        # Tạo rank trống → không có gì để lưu vào DB (không có bảng ranks riêng).
-        # → Thông báo để user biết rank sẽ xuất hiện khi có member được gán vào.
         await ctx.send(
-            f"✅ Rank **{role_name}** đã được đăng ký. "
-            f"Dùng `!setrank @member {role_name}` để gán thành viên vào rank này."
+            f"✅ Rank **{role_name}** đã được tạo. "
+            f"Dùng `!setrank @member {role_name}` để gán thành viên."
         )
 
     # ── SET RANK ─────────────────────────────
@@ -229,27 +227,25 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        gang = self._get_led_gang(guild_id, user_id)
+        gang = get_led_gang(guild_id, user_id)
         if not gang:
             return await ctx.send("❌ Chỉ Leader mới gán chức vụ.")
 
         target_id = str(member.id)
-
-        # kiểm tra target có trong gang
-        res = (
+        mem_res = (
             supabase.table("gang_members")
             .select("*")
             .eq("gang_id", gang["id"])
             .eq("user_id", target_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        if not res.data:
+        mem_row = one(mem_res)
+        if not mem_row:
             return await ctx.send("❌ Người này không thuộc gang.")
 
-        # cập nhật rank
         supabase.table("gang_members").update({"rank_name": role_name}).eq(
-            "id", res.data["id"]
+            "id", mem_row["id"]
         ).execute()
 
         await ctx.send(f"🔰 Đã gán {member.mention} thành **{role_name}**")
@@ -284,7 +280,6 @@ class Gang(commands.Cog):
         if not gangs_res.data:
             return await ctx.send("❌ Server chưa có gang.")
 
-        # đếm member cho từng gang
         gang_counts = []
         for g in gangs_res.data:
             count_res = (
@@ -315,7 +310,7 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        gang = self._get_led_gang(guild_id, user_id)
+        gang = get_led_gang(guild_id, user_id)
         if not gang:
             return await ctx.send("❌ Chỉ Leader mới được xoá gang.")
 
@@ -336,12 +331,8 @@ class Gang(commands.Cog):
         except Exception:
             return await ctx.send("❌ Hết thời gian. Đã huỷ xoá gang.")
 
-        # xoá gang (members tự xoá nhờ ON DELETE CASCADE)
         supabase.table("gangs").delete().eq("id", gang["id"]).execute()
-
-        # dọn invite cache
         self.invites = {uid: g for uid, g in self.invites.items() if g != gang["name"]}
-
         await ctx.send(f"💥 Gang **{gang['name']}** đã bị xoá.")
 
     # ── RENAME RANK ──────────────────────────
@@ -350,21 +341,16 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        gang = self._get_led_gang(guild_id, user_id)
+        gang = get_led_gang(guild_id, user_id)
         if not gang:
             return await ctx.send("❌ Chỉ Leader mới được sửa rank.")
 
         members = get_members_of_gang(gang["id"])
-        old_holders = [m for m in members if m["rank_name"] == old_name]
-
-        if not old_holders:
-            return await ctx.send("❌ Rank cũ không tồn tại (hoặc chưa có member nào).")
-
-        new_holders = [m for m in members if m["rank_name"] == new_name]
-        if new_holders:
+        if not any(m["rank_name"] == old_name for m in members):
+            return await ctx.send("❌ Rank cũ không tồn tại.")
+        if any(m["rank_name"] == new_name for m in members):
             return await ctx.send("❌ Rank mới đã tồn tại.")
 
-        # cập nhật tất cả member đang giữ rank cũ
         supabase.table("gang_members").update({"rank_name": new_name}).eq(
             "gang_id", gang["id"]
         ).eq("rank_name", old_name).execute()
@@ -377,7 +363,7 @@ class Gang(commands.Cog):
         guild_id = str(ctx.guild.id)
         user_id = str(ctx.author.id)
 
-        gang = self._get_led_gang(guild_id, user_id)
+        gang = get_led_gang(guild_id, user_id)
         if not gang:
             return await ctx.send("❌ Chỉ Leader mới được xoá rank.")
 
@@ -385,31 +371,14 @@ class Gang(commands.Cog):
             return await ctx.send("❌ Không thể xoá rank mặc định.")
 
         members = get_members_of_gang(gang["id"])
-        has_rank = any(m["rank_name"] == role_name for m in members)
-        if not has_rank:
+        if not any(m["rank_name"] == role_name for m in members):
             return await ctx.send("❌ Rank không tồn tại.")
 
-        # chuyển tất cả member của rank này về Member
         supabase.table("gang_members").update({"rank_name": "Member"}).eq(
             "gang_id", gang["id"]
         ).eq("rank_name", role_name).execute()
 
         await ctx.send(f"🗑 Đã xoá rank **{role_name}**, thành viên chuyển về Member.")
-
-    # ─────────────────────────────────────────
-    # Internal helper
-    # ─────────────────────────────────────────
-    def _get_led_gang(self, guild_id: str, user_id: str):
-        """Trả về gang row nếu user_id là leader, ngược lại None."""
-        res = (
-            supabase.table("gangs")
-            .select("*")
-            .eq("guild_id", guild_id)
-            .eq("leader_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        return res.data
 
 
 async def setup(bot):
@@ -436,7 +405,6 @@ async def setup(bot):
 #   unique(gang_id, user_id)
 # );
 #
-# -- Index để query nhanh hơn
 # create index on gangs(guild_id);
 # create index on gang_members(gang_id);
 # create index on gang_members(user_id);
