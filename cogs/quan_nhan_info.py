@@ -127,16 +127,15 @@ class ArmyInfoView(OptimizedView):
     async def show_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page = "info"
         self.update_buttons()
+        await interaction.response.defer()
         embed = await self.get_info_embed()
-        await FastInteraction.safe_edit(interaction, embed, self)
+        await interaction.edit_original_response(embed=embed, view=self)
 
     @discord.ui.button(label="Thành tựu", style=discord.ButtonStyle.primary, custom_id="achievements")
     async def show_achievements(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.current_page = "achievements"
         self.update_buttons()
-        # FIX: defer trước để tránh timeout khi query DB
-        if not interaction.response.is_done():
-            await interaction.response.defer()
+        await interaction.response.defer()
         embed = await self.get_achievement_embed()
         await interaction.edit_original_response(embed=embed, view=self)
 
