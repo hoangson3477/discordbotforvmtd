@@ -15,15 +15,38 @@ ARMY_GROUP_ID = 11329100
 DIVISION_GROUP_ID = 12750636
 OPEN_CLOUD_API_KEY = os.getenv("ROBLOX_OPENCLOUD_API_KEY")
 
+# ==========================
+# LOG CHANNELS
+# ==========================
+LOG_CHANNEL_PROMOTE = 1159862365030977617   # <-- thay bằng channel ID kênh promote
+LOG_CHANNEL_DEMOTE  = 1402241366997729351   # <-- thay bằng channel ID kênh demote
+
+# ==========================
+# RANK SHORTCUTS (Division)
+# key = rank number, value = shortcut
+# ==========================
+RANK_SHORTCUTS: dict[int, str] = {
+    4:   "TSP",
+    5:   "JDS",
+    6:   "DS",
+    7:   "SDS",
+    8:   "HDS",
+    9:   "LS",
+    10:  "B.SGT",
+    11:  "B.SGM",
+    12:  "BSF",
+    13:  "BAS",
+}
+
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ==========================
-# WHITELIST HELPERS (Supabase)
+# WHITELIST HELPERS
 # ==========================
 
 def wl_check(command_name: str):
-    """Check quyền, trả về True/False. Không quan tâm max_rank ở đây."""
     async def predicate(ctx: commands.Context):
         user_id = ctx.author.id
         role_ids = [r.id for r in ctx.author.roles]
@@ -52,17 +75,10 @@ def wl_check(command_name: str):
 
 
 async def get_max_rank(command_name: str, ctx: commands.Context) -> int | None:
-    """
-    Lấy max_rank cho phép của người dùng với command này.
-    - Nếu có nhiều entries match → lấy max_rank cao nhất (ưu tiên quyền rộng hơn).
-    - None = không giới hạn.
-    """
     user_id = ctx.author.id
     role_ids = [r.id for r in ctx.author.roles]
-
     results = []
 
-    # Check user entry
     res = supabase.table("whitelist") \
         .select("max_rank") \
         .eq("command", command_name) \
@@ -71,7 +87,6 @@ async def get_max_rank(command_name: str, ctx: commands.Context) -> int | None:
         .execute()
     results.extend(res.data)
 
-    # Check role entries
     if role_ids:
         res = supabase.table("whitelist") \
             .select("max_rank") \
@@ -82,13 +97,11 @@ async def get_max_rank(command_name: str, ctx: commands.Context) -> int | None:
         results.extend(res.data)
 
     if not results:
-        return 0  # Không có quyền gì
+        return 0
 
-    # Nếu bất kỳ entry nào là NULL → không giới hạn
     if any(r["max_rank"] is None for r in results):
         return None
 
-    # Trả về max_rank cao nhất trong các entries
     return max(r["max_rank"] for r in results)
 
 
@@ -105,7 +118,6 @@ def _do_promote(group, user_id: int, max_rank: int | None):
     next_role = next((r for r in roles if r.rank > current_role.rank), None)
     if not next_role:
         return current_role, None, "max_rank_global"
-    # Kiểm tra giới hạn quyền
     if max_rank is not None and next_role.rank > max_rank:
         return current_role, next_role, "no_permission_rank"
     group.update_member(user_id, role_id=next_role.id)
@@ -120,7 +132,6 @@ def _do_demote(group, user_id: int, max_rank: int | None):
     prev_role = next((r for r in reversed(roles) if r.rank < current_role.rank), None)
     if not prev_role:
         return current_role, None, "min_rank"
-    # Kiểm tra giới hạn quyền — chỉ được demote người có rank <= max_rank của mình
     if max_rank is not None and current_role.rank > max_rank:
         return current_role, prev_role, "no_permission_rank"
     group.update_member(user_id, role_id=prev_role.id)
@@ -162,6 +173,25 @@ class Prode(commands.Cog):
                 if data.get("data"):
                     return data["data"][0]["id"]
                 return None
+
+    async def send_log(self, action: str, username: str, current_role, next_role, done_by: discord.Member):
+        """Gửi log vào kênh tương ứng. Skip nếu một trong hai rank không có trong RANK_SHORTCUTS."""
+        if current_role.rank not in RANK_SHORTCUTS or next_role.rank not in RANK_SHORTCUTS:
+            return
+
+        channel_id = LOG_CHANNEL_PROMOTE if action == "promote" else LOG_CHANNEL_DEMOTE
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            return
+
+        from_label = RANK_SHORTCUTS[current_role.rank]
+        to_label   = RANK_SHORTCUTS[next_role.rank]
+        arrow      = "⬆️" if action == "promote" else "⬇️"
+
+        await channel.send(
+            f"{arrow} **{username}**: {from_label} → {to_label} "
+            f"| by {done_by.mention}"
+        )
 
     # ==========================
     # COMMAND: !promote
@@ -265,6 +295,7 @@ class Prode(commands.Cog):
                 )
 
             await ctx.send(f"✅ `{username}` được thăng cấp đơn vị **từ {current_role.name} → {next_role.name}**")
+            await self.send_log("promote", username, current_role, next_role, ctx.author)
 
     @promotediv.error
     async def promotediv_error(self, ctx, error):
@@ -302,6 +333,7 @@ class Prode(commands.Cog):
                 )
 
             await ctx.send(f"⬇️ `{username}` bị hạ cấp đơn vị **từ {current_role.name} → {prev_role.name}**")
+            await self.send_log("demote", username, current_role, prev_role, ctx.author)
 
     @demotediv.error
     async def demotediv_error(self, ctx, error):
