@@ -400,7 +400,7 @@ intents.members = True
 intents.presences = True
 
 bot = MyBot(
-    command_prefix="!",
+    command_prefix="vmtd ",
     intents=intents,
     help_command=None
 )
