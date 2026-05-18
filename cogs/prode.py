@@ -141,15 +141,11 @@ def _do_acpreq(division_group, user_id: int):
     existing = division_group.fetch_member(user_id)
     if existing:
         return "already_member"
-    target = None
     for req in division_group.list_join_requests():
-        if req.user_id == user_id:
-            target = req
-            break
-    if not target:
-        return "no_request"
-    division_group.accept_join_request(user_id)
-    return "ok"
+        if req.id == user_id:
+            req.accept()
+            return "ok"
+    return "no_request"
 
 
 # ==========================
