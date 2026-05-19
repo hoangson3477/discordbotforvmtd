@@ -103,10 +103,10 @@ class AutoReply(commands.Cog):
             color=0x5865F2,
             description=(
                 "```\n"
-                "!ar add  <user_id> <trigger> | <response>\n"
-                "!ar remove <user_id> <trigger>\n"
-                "!ar list [user_id]\n"
-                "!ar clear <user_id>\n"
+                "vmtd ar add  <user_id> <trigger> | <response>\n"
+                "vmtd ar remove <user_id> <trigger>\n"
+                "vmtd ar list [user_id]\n"
+                "vmtd ar clear <user_id>\n"
                 "```"
             ),
         )
@@ -118,8 +118,8 @@ class AutoReply(commands.Cog):
     async def ar_add(self, ctx: commands.Context, user_id: str, *, args: str):
         """
         Thêm rule mới.
-        Cú pháp: !ar add <user_id> <trigger> | <response>
-        Ví dụ  : !ar add 123456789 hello | Chào bạn! 👋
+        Cú pháp: vmtd ar add <user_id> <trigger> | <response>
+        Ví dụ  : vmtd ar add 123456789 hello | Chào bạn! 👋
         """
         # Validate user_id format
         try:
@@ -130,7 +130,7 @@ class AutoReply(commands.Cog):
             return await ctx.send("❌ User ID không hợp lệ. Phải là số.")
         
         if "|" not in args:
-            return await ctx.send("❌ Cần dùng dấu `|` để phân cách trigger và response.\nVí dụ: `!ar add 123456 hello | Xin chào!`")
+            return await ctx.send("❌ Cần dùng dấu `|` để phân cách trigger và response.\nVí dụ: `vmtd ar add 123456 hello | Xin chào!`")
 
         trigger, _, response = args.partition("|")
         trigger = trigger.strip()
@@ -165,7 +165,7 @@ class AutoReply(commands.Cog):
     async def ar_remove(self, ctx: commands.Context, user_id: str, *, trigger: str):
         """
         Xóa một trigger của user.
-        Cú pháp: !ar remove <user_id> <trigger>
+        Cú pháp: vmtd ar remove <user_id> <trigger>
         """
         trigger = trigger.strip()
         user_rules = self.rules.get(user_id, {})

@@ -55,7 +55,7 @@ class CustomHelpCommand(commands.HelpCommand):
     # ──────────────────────────────────────────
 
     async def send_bot_help(self, mapping) -> None:
-        """Gửi danh sách tất cả lệnh (khi người dùng gõ !help)."""
+        """Gửi danh sách tất cả lệnh (khi người dùng gõ vmtd help)."""
         prefix = self.context.clean_prefix
         description = (
             f"Sử dụng `{prefix}help <lệnh>` để xem chi tiết về một lệnh cụ thể.\n"
@@ -117,7 +117,7 @@ class CustomHelpCommand(commands.HelpCommand):
     # ──────────────────────────────────────────
 
     async def send_command_help(self, command) -> None:
-        """Gửi chi tiết về một lệnh cụ thể (khi người dùng gõ !help <tên_lệnh>)."""
+        """Gửi chi tiết về một lệnh cụ thể (khi người dùng gõ vmtd help <tên_lệnh>)."""
         embed = self._base_embed(
             f"📖 Trợ Giúp Lệnh: `{command.name}`",
             command.help or "Không có mô tả chi tiết cho lệnh này.",
@@ -214,7 +214,7 @@ class CustomHelpCommand(commands.HelpCommand):
     def _extract_examples_from_help(self, help_string: str) -> list[str]:
         """
         Trích xuất các ví dụ từ chuỗi help của lệnh.
-        Giả định các ví dụ nằm sau dòng "Ví dụ:" và bắt đầu bằng ! hoặc /.
+        Giả định các ví dụ nằm sau dòng "Ví dụ:" và bắt đầu bằng vmtd hoặc /.
         """
         if not help_string:
             return []
@@ -230,7 +230,7 @@ class CustomHelpCommand(commands.HelpCommand):
             if in_examples:
                 if not stripped or stripped.lower().startswith("cách dùng:"):
                     break
-                if stripped.startswith("!") or stripped.startswith("/"):
+                if stripped.startswith("vmtd ") or stripped.startswith("/"):
                     examples.append(stripped)
 
         return examples
